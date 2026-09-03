@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.5 (2026-09-03)
+
+- Clarify in the Position TX tab that Preferred bands applies to every VarAC transmission, including APRS-to-VarAC relays.
+
 ## 0.3.4 (2026-09-03)
 
 - Preferred bands for Position TX: automatic broadcasts hold until VarAC's scanner is on a chosen band; manual sends (position and relay) are queued for it, with a maximum wait and a Cancel button. Status shows VarAC's current band.
