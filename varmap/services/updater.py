@@ -97,7 +97,9 @@ def helper_script(pid: int, installer: str, exe: str) -> str:
         f'"{installer}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /NOCANCEL',
         'if errorlevel 1 (echo Installer reported an error %errorlevel%. & pause & exit /b 1)',
         f'start "" "{exe}"',
-        'del "%~f0" >nul 2>&1',
+        # Self-delete without cmd complaining "The batch file cannot be found": the
+        # (goto) trick ends batch processing before del runs.
+        '(goto) 2>nul & del "%~f0"',
         "",
     ])
 
@@ -132,8 +134,25 @@ class Updater:
         s["available"] = bool(s.get("latest")) and is_newer(s["latest"], __version__) and (s["skipped"] != s["latest"])
         return s
 
+    def cleanup(self) -> None:
+        """Remove installers and helper scripts left behind by a previous update."""
+        ddir = os.path.join(self.cfg.data_dir(), "updates")
+        if not os.path.isdir(ddir):
+            return
+        for name in os.listdir(ddir):
+            if name.lower().endswith((".exe", ".cmd", ".zip", ".tar.gz")):
+                try:
+                    os.remove(os.path.join(ddir, name))
+                    log.info("removed leftover update file %s", name)
+                except OSError:
+                    pass
+
     def _run(self) -> None:
         self._stop.wait(20)  # let the app come up first
+        try:
+            self.cleanup()
+        except Exception as e:  # noqa: BLE001
+            log.debug("update cleanup failed: %s", e)
         while not self._stop.is_set():
             u = self.cfg.get("updates") or {}
             if u.get("check", True):

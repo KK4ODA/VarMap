@@ -27,3 +27,4 @@ def test_helper_script_waits_installs_relaunches():
     s = helper_script(1234, r"C:\x\VarMap-Setup-0.3.0.exe", r"C:\Program Files\VarMap\VarMap.exe")
     assert 'PID eq 1234' in s and "/VERYSILENT" in s and "/CLOSEAPPLICATIONS" in s
     assert s.index("goto wait") < s.index("VERYSILENT") < s.index('start "" "C:\\Program Files\\VarMap\\VarMap.exe"')
+    assert s.rstrip().endswith('(goto) 2>nul & del "%~f0"')     # self-delete must be the final line, via the goto idiom
