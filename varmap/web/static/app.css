@@ -144,8 +144,8 @@ i.dot.aprs { border-radius: 2px; transform: rotate(45deg); }
 .own-marker .lbl { position: absolute; left: 11px; top: -9px; font: 700 11px ui-monospace, Consolas, monospace; color: var(--own); text-shadow: 0 0 3px #fff, 0 0 3px #fff; white-space: nowrap; }
 .marker-cluster div { font-weight: 700; }
 .marker-cluster.c-fresh { background: rgba(46,125,50,.35); } .marker-cluster.c-fresh div { background: rgba(46,125,50,.85); color: #fff; }
-.marker-cluster.c-recent { background: rgba(25,118,210,.35); } .marker-cluster.c-recent div { background: rgba(25,118,210,.85); color: #fff; }
-.marker-cluster.c-stale { background: rgba(249,168,37,.35); } .marker-cluster.c-stale div { background: rgba(249,168,37,.9); color: #222; }
+.marker-cluster.c-recent { background: rgba(249,168,37,.3); } .marker-cluster.c-recent div { background: rgba(255,241,118,.95); color: #222; box-shadow: inset 0 0 0 2px var(--age-recent-line); }
+.marker-cluster.c-stale { background: rgba(239,154,154,.4); } .marker-cluster.c-stale div { background: rgba(229,57,53,.85); color: #fff; }
 .marker-cluster.c-old { background: rgba(158,158,158,.3); } .marker-cluster.c-old div { background: rgba(158,158,158,.85); color: #fff; }
 .track-pt { width: 0 !important; height: 0 !important; }
 .track-pt .p { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 1.5px solid #fff; }

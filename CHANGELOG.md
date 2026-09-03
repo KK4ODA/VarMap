@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7 (2026-09-03)
+
+- Cluster badges now use the same age colours as the dots (yellow = freshest member is recent, red = stale). They were still blue/orange.
+
 ## 0.3.6 (2026-09-03)
 
 - New position-age colours: fresh green, recent light yellow, stale half red with a light border, old open circle with a grey border.
