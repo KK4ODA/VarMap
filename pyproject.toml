@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varmap"
-version = "0.3.2"
+version = "0.3.3"
 description = "VarAC companion: maps the stations you hear and broadcasts your own GPS position through VarAC"
 readme = "README.md"
 license = { file = "LICENSE" }

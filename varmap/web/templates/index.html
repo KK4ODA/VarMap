@@ -179,7 +179,7 @@
       <div class="row beacon-controls">
         <button id="btn-beacon-on" class="primary" title="Arms the automatic scheduler. The first position broadcast goes out one interval from now, then according to the mode below, until you press Stop">Start auto position TX</button>
         <button id="btn-beacon-off" class="danger" title="Kill switch: stops all automatic position broadcasts immediately">Stop auto position TX</button>
-        <button id="btn-send-now" title="One manual position broadcast right now (respects the 5-minute spacing and the hourly limit). Does not start the scheduler">Send position once now</button>
+        <button id="btn-send-now" title="One manual position broadcast right now. Manual sends need only 60 s since the previous VarAC transmission and count against the hourly limit. Does not start the scheduler">Send position once now</button>
         <label class="inline" title="Rehearsal mode: VarMap decides and logs exactly as if it were transmitting, but never touches VarAC. Leave on until you are happy with the timing"><input type="checkbox" data-cfg="beacon.dry_run"> Dry run (log only, never transmit)</label>
       </div>
       <div id="beacon-status" class="info" title="Live status of the scheduler"></div>
@@ -221,7 +221,7 @@
         <label title="Send a broadcast when you enter a new 6-character grid square (after a short dwell so a wobble at the boundary does not trigger it)"><input type="checkbox" data-cfg="beacon.smart.grid_change_triggers"> Grid change triggers</label>
         <label title="How long you must stay in the new grid square before it counts as a change">Grid dwell (s) <input type="number" data-cfg="beacon.smart.grid_dwell_seconds"></label>
       </div>
-      <p class="muted warn-text">You, the licensee, are responsible for every transmission this software initiates. Position TX is OFF by default and starts in dry-run mode. A broadcast discloses your exact coordinates on HF; reduce the decimals for a coarser position. Built-in limits that no setting can override: at least 5 minutes between transmissions, a stationary station repeats itself at most every 30 minutes, at most 6 transmissions per hour (default 2) and 48 per day, and no smart timing on VarAC's calling frequencies.</p>
+      <p class="muted warn-text">You, the licensee, are responsible for every transmission this software initiates. Position TX is OFF by default and starts in dry-run mode. A broadcast discloses your exact coordinates on HF; reduce the decimals for a coarser position. Built-in limits that no setting can override: at least 5 minutes between automatic transmissions (60 s for the manual buttons), a stationary station repeats itself at most every 30 minutes, at most 6 transmissions per hour (default 2) and 48 per day, and no smart timing on VarAC's calling frequencies.</p>
       <h4>Diagnostics</h4>
       <div class="row">
         <button id="btn-rehearse" title="Opens VarAC's broadcast window, fills it in, reads VarAC's byte counter to confirm the text arrived, then closes the window. Nothing is transmitted">Test VarAC dialog (no TX)</button>

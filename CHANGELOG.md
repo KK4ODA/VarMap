@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3 (2026-09-03)
+
+- Manual sends (Send position once now, Relay to VarAC) need only 60 s since the previous VarAC transmission; the 5-minute floor now applies to the automatic scheduler only. APRS object transmissions no longer count toward VarAC spacing. Hourly and daily limits unchanged.
+
 ## 0.3.2 (2026-09-03)
 
 - Fix: the start-up integrity check could rename the live database when a second VarMap process (for example `--status`) opened it while VarMap was running. The check now runs only in the main server after the port check proves it is the sole instance, is skipped when another process holds the database, and `--status` never checks integrity.

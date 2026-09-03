@@ -31,7 +31,8 @@ FAIL_BACKOFF_SECONDS = 120.0   # after a failed hand-over to VarAC, do not try a
 # shared calling frequencies; a position beacon every few minutes from a parked
 # station is noise for everyone.  (Values are seconds unless stated.)
 LIMITS = {
-    "min_interval_seconds": 300,       # never two transmissions closer than 5 min, any mode
+    "min_interval_seconds": 300,       # automatic transmissions: never closer than 5 min
+    "manual_min_spacing_seconds": 60,  # manual buttons (Send once now, Relay to VarAC): 60 s, guards against double clicks
     "min_keepalive_seconds": 1800,     # a station that has not moved repeats itself at most every 30 min
     "min_move_m": 100.0,               # "moved" means at least 100 m
     "max_per_hour": 6,                 # absolute hourly cap (config default 2)
@@ -158,7 +159,7 @@ class BeaconService(threading.Thread):
         return {"ok": True, "message": msg, "length": len(msg), "max": varac_tx.BROADCAST_MAX_BYTES}
 
     # -- interlocks -------------------------------------------------------------
-    def _blocked_reason(self, bc: Dict[str, Any], fix: Optional[OwnFix]) -> Optional[str]:
+    def _blocked_reason(self, bc: Dict[str, Any], fix: Optional[OwnFix], manual: bool = False) -> Optional[str]:
         if not self.vc.mycall():
             return "no callsign configured (set Mycall in VarAC or own_station.callsign)"
         if fix is None:
@@ -175,11 +176,15 @@ class BeaconService(threading.Thread):
         nd = self.repo.beacon_tx_count_since(iso_utc(now_utc() - timedelta(hours=24)), real_only=real_only)
         if nd >= int(bc.get("max_per_day") or LIMITS["max_per_day"]):
             return f"daily limit: {nd} transmissions in the last 24 h (max {bc.get('max_per_day')})"
-        last = self.repo.beacon_tx_recent(limit=1)
-        if last and last[0].get("ok") and (not last[0].get("dry_run") or not real_only):
-            since = (now_utc() - (parse_iso(last[0]["requested_at"]) or now_utc())).total_seconds()
-            if since < LIMITS["min_interval_seconds"]:
-                return f"minimum spacing: last transmission {int(since)} s ago (floor {LIMITS['min_interval_seconds']} s)"
+        # Spacing from the previous VarAC transmission of any kind.  Automatic sends keep the
+        # 5-minute floor; a manual button press is the operator's own call and only needs a
+        # short guard against double clicks (VarAC still enforces its busy-channel wait).
+        floor = LIMITS["manual_min_spacing_seconds"] if manual else LIMITS["min_interval_seconds"]
+        last = next((r for r in self.repo.beacon_tx_recent(limit=10) if str(r.get("method", "")) in ("broadcast", "beacon")), None)
+        if last and last.get("ok") and (not last.get("dry_run") or not real_only):
+            since = (now_utc() - (parse_iso(last["requested_at"]) or now_utc())).total_seconds()
+            if since < floor:
+                return f"minimum spacing: last VarAC transmission {int(since)} s ago (floor {int(floor)} s{' for manual sends' if manual else ''})"
         if (bc.get("mode") or "fixed").lower() == "smart":
             # Smart timing is meant for a QSY'd tracker frequency, never for the shared calling frequencies.
             cf = self._on_calling_frequency(bc)
@@ -342,7 +347,7 @@ class BeaconService(threading.Thread):
         bc = clamp_beacon_config(self.cfg.get("beacon"))
         fix = self.tracker.current()
         with self._lock:
-            blocked = self._blocked_reason(bc, fix)
+            blocked = self._blocked_reason(bc, fix, manual=True)
             if blocked:
                 return {"ok": False, "error": blocked}
             row = self._transmit(bc, fix, "manual")
@@ -357,7 +362,7 @@ class BeaconService(threading.Thread):
         bc = clamp_beacon_config(self.cfg.get("beacon"))
         fix = self.tracker.current()
         with self._lock:
-            blocked = self._blocked_reason(bc, fix)
+            blocked = self._blocked_reason(bc, fix, manual=True)
             if blocked:
                 return {"ok": False, "error": blocked}
             msg = self.relay_message(station, comment)

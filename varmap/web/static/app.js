@@ -388,7 +388,7 @@
         <button id="d-copy" ${d.grid ? "" : "disabled"} title="Copy the grid square to the clipboard">Copy grid</button>
         <button id="d-fav" title="Mark as a favourite so you can filter on it">${d.is_favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
         <button id="d-hide" title="Hide this station from the map and list (it keeps being recorded)">${d.is_hidden ? "Unhide" : "Hide"}</button>
-        ${isAprs(d) && !unl ? `<button id="d-relay" title="Broadcast this APRS station's position on VarAC once, as 'APRS ${esc(d.callsign)} <GPS:...> via ${esc((S.health && S.health.varac && S.health.varac.mycall) || "me")}'. Counts against your hourly limit and every Position TX interlock">Relay to VarAC</button>` : ""}
+        ${isAprs(d) && !unl ? `<button id="d-relay" title="Broadcast this APRS station's position on VarAC once, as 'APRS ${esc(d.callsign)} <GPS:...> via ${esc((S.health && S.health.varac && S.health.varac.mycall) || "me")}'. Manual: needs 60 s since the previous VarAC transmission, counts against your hourly limit and every other Position TX interlock">Relay to VarAC</button>` : ""}
         ${!isAprs(d) && !unl && !d.is_own ? `<button id="d-relay-aprs" ${d.aprs_consent === 1 ? "" : "disabled"} title="${d.aprs_consent === 1 ? "Send this VarAC station to APRS now as an object under your callsign, through Graywolf (respects the APRS dry-run switch and the hourly cap)" : "Not allowed: this station has not said APRS:Y in a VarAC broadcast, so it may not be relayed to APRS"}">Relay to APRS</button>` : ""}
       </div>
       ${d.aprs_consent != null ? `<div class="muted" style="margin:4px 0">APRS relay consent: <b>${d.aprs_consent ? "given (APRS:Y)" : "refused (APRS:N)"}</b> · stated ${ageStr(d.aprs_consent_at)} ago</div>` : ""}

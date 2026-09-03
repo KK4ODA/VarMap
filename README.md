@@ -115,7 +115,7 @@ interval later, then per the timing mode, until **Stop**. **Send position once n
 manual transmission and never starts the scheduler.
 
 Built-in anti-spam limits that no setting can relax: at least 5 minutes
-between transmissions in any mode (manual ones included), a stationary station
+between automatic transmissions (the manual buttons need 60 s), a stationary station
 repeats itself at most every 30 minutes, at most 6 transmissions per hour
 (default 2) and 48 per day. "Only if moved" is on by default and asks for
 confirmation before it is switched off.
