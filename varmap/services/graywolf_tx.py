@@ -215,6 +215,74 @@ class GraywolfTx(threading.Thread):
                                        "last": last or self.state["gate"].get("last")})
         return sent
 
+    def relay_station(self, callsign: str) -> Dict[str, Any]:
+        """Manual, one-off relay of ONE consenting VarAC station as an APRS object.
+        Consent, own-station and position checks are the same as the automatic
+        pass; the per-station spacing is waived, the hourly cap is not."""
+        g = self.cfg.get("graywolf") or {}
+        if not g.get("enabled"):
+            return {"ok": False, "error": "APRS feed from Graywolf is not enabled"}
+        st = self.repo.station(callsign)
+        if not st:
+            return {"ok": False, "error": "unknown station"}
+        if st.get("is_own"):
+            return {"ok": False, "error": "that is your own station; use the mirror instead"}
+        if st.get("aprs_consent") != 1:
+            return {"ok": False, "error": f"{st['callsign']} has not said APRS:Y in a VarAC broadcast; relaying is not allowed"}
+        if st.get("lat") is None:
+            return {"ok": False, "error": "station has no position"}
+        if st.get("position_source") == "aprs":
+            return {"ok": False, "error": "that station is already on APRS"}
+        now = now_utc()
+        consent_days = min(int(g.get("gate_consent_max_age_days") or 30), GATE_LIMITS["consent_max_age_days"])
+        consent_at = parse_iso(st.get("aprs_consent_at"))
+        if consent_at is None or (now - consent_at) > timedelta(days=consent_days):
+            return {"ok": False, "error": "that station's APRS:Y is older than the consent validity period"}
+        per_hour = min(int(g.get("gate_max_per_hour") or 10), GATE_LIMITS["max_per_hour"])
+        if self.repo.gate_sent_since(iso_utc(now - timedelta(hours=1))) >= per_hour:
+            return {"ok": False, "error": f"hourly cap of {per_hour} relayed objects reached"}
+        name = object_name_for(st["callsign"])
+        if not name:
+            return {"ok": False, "error": "callsign too long for an APRS object name"}
+        dry = bool(g.get("dry_run", True))
+        gate = self.repo.gate_get(st["callsign"]) or {}
+        body = object_beacon_body(st, name, self.rt.vc.mycall(), g)
+        summary = f"{name} @ {body['latitude']},{body['longitude']} amb{body['ambiguity']} {body['comment']}"
+        try:
+            bid = gate.get("beacon_id")
+            if not dry:
+                c = self._client()
+                if c is None:
+                    raise GraywolfError("Graywolf feed not enabled")
+                if bid:
+                    try:
+                        c.update_beacon(int(bid), body)
+                    except GraywolfError as e:
+                        if "404" not in str(e):
+                            raise
+                        bid = None
+                if not bid:
+                    found = c.find_beacon(name)
+                    if found and found.get("id") is not None:
+                        bid = int(found["id"])
+                        c.update_beacon(bid, body)
+                    else:
+                        created = c.create_beacon(body)
+                        bid = created.get("id") or (created.get("beacon") or {}).get("id")
+                        if bid is None:
+                            raise GraywolfError(f"no beacon id returned: {created}")
+                c.send_beacon(int(bid))
+            self.repo.gate_upsert(st["callsign"], object_name=name, beacon_id=bid, last_sent_at=iso_utc(now),
+                                  last_lat=st["lat"], last_lon=st["lon"], sent_count=int(gate.get("sent_count") or 0) + 1,
+                                  last_error=None)
+            self._log("graywolf_object", f"manual:{st['callsign']}", True, dry, summary, st["lat"], st["lon"], st.get("grid"))
+            log.info("%s APRS object (manual) via Graywolf: %s", "DRY-RUN" if dry else "SENT", summary)
+            return {"ok": True, "dry_run": dry, "message": summary}
+        except Exception as e:  # noqa: BLE001
+            self.repo.gate_upsert(st["callsign"], object_name=name, last_error=str(e))
+            self._log("graywolf_object", f"manual:{st['callsign']}", False, dry, summary, st["lat"], st["lon"], st.get("grid"), str(e))
+            return {"ok": False, "dry_run": dry, "error": str(e), "message": summary}
+
     def _retire(self, g: Dict[str, Any], dry: bool) -> None:
         """Forget objects for stations silent longer than gate_retire_hours (delete the Graywolf beacon)."""
         hours = float(g.get("gate_retire_hours") or 24)

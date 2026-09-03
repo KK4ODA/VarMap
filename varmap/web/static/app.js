@@ -38,6 +38,13 @@
   function fmtFreq(hz) { if (!hz) return ""; const s = String(hz); return s.replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
   function dist(st) { return st.distance_display || ""; }
   function isAprs(st) { return st.last_frame_kind === "aprs" || st.position_source === "aprs"; }
+  // One symbol vocabulary for the map marker, the list and the station panel.
+  function dotClasses(st) {
+    const nopos = st.lat == null;
+    return ["dot", nopos ? "none" : st.state, st.is_own ? "own" : "", isAprs(st) ? "aprs" : "", st.is_object ? "object" : "",
+      st.position_suspect ? "suspect" : "", st.is_emcomm ? "emcomm" : ""].filter(Boolean).join(" ");
+  }
+  function dotHtml(st) { return `<i class="${dotClasses(st)}"></i>`; }
   function bandsStr(st) {
     const b = st.bands_recent || [];
     if (b.length > 1) return b.join("·");
@@ -321,7 +328,7 @@
       const nopos = st.lat == null;
       const tip = `${st.callsign}: last heard ${ageStr(st.last_heard)} ago` + (nopos ? ". No grid locator received (standard beacons carry none)" : `, position ${ageStr(st.position_time)} old`) + ". Click for details";
       return `<div class="row-stn ${nopos ? "nopos" : ""} ${S.selected === st.callsign ? "sel" : ""}" data-cs="${esc(st.callsign)}" title="${esc(tip)}">
-        <span class="call"><i class="dot ${nopos ? "none" : st.state}"></i>${esc(st.callsign)}</span>
+        <span class="call">${dotHtml(st)}${esc(st.callsign)}</span>
         <span class="grid">${nopos ? "— no position —" : esc(st.grid || (st.lat.toFixed(2) + "," + st.lon.toFixed(2)))}</span>
         <span class="sub"><span title="Last heard">${ageStr(st.last_heard)}</span>${dist(st) ? `<span>${dist(st)} ${st.bearing_deg}°</span>` : ""}<span title="${(st.bands_recent || []).length > 1 ? "Heard on " + st.bands_recent.join(", ") + " in the last 6 hours" : "Band of the last frame heard"}">${esc(bandsStr(st))}</span><span>SNR ${st.last_snr_db ?? "—"}</span>${chips(st)}</span>
       </div>`;
@@ -362,7 +369,7 @@
     const distinctGrids = new Set((d.positions || []).map((p) => p.grid).filter(Boolean)).size;
     const heard = (d.heard || []).map((h) => `<div class="heard-row"><span class="t">${ageStr(h.heard_at)}</span><span>${esc(h.frame_kind)}${h.had_position ? "" : " (no loc)"}</span><span>${esc(h.band || "")} ${h.snr_db ?? ""}</span><span class="txt">${esc(h.text || "")}</span></div>`).join("");
     $("detail").innerHTML = `
-      <h2><i class="dot ${unl ? "none" : d.state}"></i>${esc(d.callsign)} ${chips(d)}<button class="x" id="d-close">✕</button></h2>
+      <h2>${dotHtml(d)}${esc(d.callsign)} ${chips(d)}<button class="x" id="d-close">✕</button></h2>
       <table>
         <tr><td>Position</td><td>${unl ? "<i>no position — this station sends standard beacons, which carry no grid locator</i>" :
           `<b>${esc(d.grid || "")}</b> · ${d.lat.toFixed(d.accuracy_m && d.accuracy_m < 1000 ? 5 : 2)}, ${d.lon.toFixed(d.accuracy_m && d.accuracy_m < 1000 ? 5 : 2)} <span class="muted">(${d.grid ? "grid centre, " : ""}${acc}, ${esc(srcName)})</span>${d.position_suspect ? ' <span class="chip">? implausible jump</span>' : ""}`}</td></tr>
@@ -382,6 +389,7 @@
         <button id="d-fav" title="Mark as a favourite so you can filter on it">${d.is_favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
         <button id="d-hide" title="Hide this station from the map and list (it keeps being recorded)">${d.is_hidden ? "Unhide" : "Hide"}</button>
         ${isAprs(d) && !unl ? `<button id="d-relay" title="Broadcast this APRS station's position on VarAC once, as 'APRS ${esc(d.callsign)} <GPS:...> via ${esc((S.health && S.health.varac && S.health.varac.mycall) || "me")}'. Counts against your hourly limit and every Position TX interlock">Relay to VarAC</button>` : ""}
+        ${!isAprs(d) && !unl && !d.is_own ? `<button id="d-relay-aprs" ${d.aprs_consent === 1 ? "" : "disabled"} title="${d.aprs_consent === 1 ? "Send this VarAC station to APRS now as an object under your callsign, through Graywolf (respects the APRS dry-run switch and the hourly cap)" : "Not allowed: this station has not said APRS:Y in a VarAC broadcast, so it may not be relayed to APRS"}">Relay to APRS</button>` : ""}
       </div>
       ${d.aprs_consent != null ? `<div class="muted" style="margin:4px 0">APRS relay consent: <b>${d.aprs_consent ? "given (APRS:Y)" : "refused (APRS:N)"}</b> · stated ${ageStr(d.aprs_consent_at)} ago</div>` : ""}
       <textarea id="d-notes" placeholder="Notes…" title="Your private notes about this station">${esc(d.notes || "")}</textarea>
@@ -395,6 +403,14 @@
     $("d-fav").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { is_favorite: d.is_favorite ? 0 : 1 }); refreshStations(); select(d.callsign); };
     $("d-hide").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { is_hidden: d.is_hidden ? 0 : 1 }); closeDetail(); refreshStations(true); };
     $("d-save-notes").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { notes: $("d-notes").value }); $("d-notes-msg").textContent = "saved"; };
+    const relayAprs = $("d-relay-aprs");
+    if (relayAprs) relayAprs.onclick = async () => {
+      const gw = S.config && S.config.graywolf;
+      if (!gw || !gw.enabled) { alert("Enable the APRS feed from Graywolf first (Settings > APRS)."); return; }
+      if (!gw.dry_run && !confirm(`Send ${d.callsign} to APRS now as an object under your callsign?`)) return;
+      const r = await api(`/api/station/${encodeURIComponent(d.callsign)}/relay_to_aprs`, {});
+      alert(r.ok ? (r.dry_run ? "Dry run logged: " : "Sent to APRS: ") + r.message : "Not sent: " + r.error);
+    };
     const relayBtn = $("d-relay");
     if (relayBtn) relayBtn.onclick = async () => {
       const dry = S.config && S.config.beacon && S.config.beacon.dry_run;

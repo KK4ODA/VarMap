@@ -138,6 +138,10 @@ def create_app(rt) -> Flask:
         except Exception as e:  # noqa: BLE001
             return jsonify({"ok": False, "error": str(e)})
 
+    @app.route("/api/station/<callsign>/relay_to_aprs", methods=["POST"])
+    def api_relay_to_aprs(callsign: str):
+        return jsonify(rt.graywolf_tx.relay_station(callsign))
+
     @app.route("/api/station/<callsign>/relay_to_varac", methods=["POST"])
     def api_relay_to_varac(callsign: str):
         st = rt.repo.station(callsign)

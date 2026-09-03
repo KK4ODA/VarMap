@@ -82,6 +82,11 @@ i.dot.old { background: #fff; border-color: var(--old); opacity: .8; }
 i.dot.historic { background: #fff; border-color: #cfd8dc; opacity: .6; }
 i.dot.own { background: #fff; border-color: var(--own); }
 i.dot.none { background: transparent; border-color: #cfd8dc; border-style: dashed; }
+/* Same variants as the map markers */
+i.dot.own { background: #fff !important; border-color: var(--own) !important; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 4px var(--own); }
+i.dot.object { border-radius: 0; transform: none; }
+i.dot.suspect { border-style: dashed; }
+i.dot.emcomm { box-shadow: 0 0 0 2px var(--danger); }
 
 #detail { padding: 10px 12px; }
 #detail h2 { margin: 0 0 6px; font-family: ui-monospace, Consolas, monospace; display: flex; align-items: center; gap: 8px; }
