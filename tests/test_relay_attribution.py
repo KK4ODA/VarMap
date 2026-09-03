@@ -74,12 +74,11 @@ def test_integrity_check_is_skipped_while_another_process_holds_the_db():
     Repository(p).close()                                          # create a healthy DB (WAL mode)
     holder = sqlite3.connect(p, isolation_level=None)
     holder.execute("PRAGMA journal_mode = WAL")
-    holder.execute("BEGIN IMMEDIATE")                              # simulate the running VarMap mid-write
-    holder.execute("INSERT INTO app_meta(key, value) VALUES('x','y')")
+    holder.execute("SELECT COUNT(*) FROM station").fetchone()     # an idle open connection, like the running VarMap
     repo = Repository(p, check_integrity=True)
     assert repo.integrity.startswith("unchecked (database in use") and repo.quarantined is None
     assert os.path.isfile(p)                                       # never renamed away from the holder
-    holder.execute("ROLLBACK"); holder.close()
+    holder.close()
 
 
 def test_integrity_check_runs_when_db_is_free():
