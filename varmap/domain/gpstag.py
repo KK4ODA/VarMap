@@ -154,6 +154,21 @@ def parse_position_text(text: Optional[str]) -> Optional[TextPosition]:
     return None
 
 
+# Consent token carried in VarMap position broadcasts: 'APRS:Y' = you may relay my
+# position to APRS, 'APRS:N' = you may not.  Absent = no statement (treated as no).
+APRS_CONSENT = re.compile(r"(?<![A-Z0-9])APRS\s*[:=]\s*([YN])(?![A-Z0-9])", re.I)
+APRS_CONSENT_YES = "APRS:Y"
+APRS_CONSENT_NO = "APRS:N"
+
+
+def parse_aprs_consent(text: Optional[str]) -> Optional[bool]:
+    """True for APRS:Y, False for APRS:N, None when the message says nothing."""
+    m = APRS_CONSENT.search(unmangle(text or ""))
+    if not m:
+        return None
+    return m.group(1).upper() == "Y"
+
+
 def format_gps_tag(lat: float, lon: float, decimals: int = 5) -> str:
     """The signed decimal form VarAC itself produces from ManualGPSData."""
     decimals = max(0, min(int(decimals), 7))

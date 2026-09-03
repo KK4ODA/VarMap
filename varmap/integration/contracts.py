@@ -42,6 +42,7 @@ class Observation:
     text: Optional[str] = None         # message text for broadcasts / vmails (display, not parsed)
     symbol: Optional[str] = None       # APRS symbol table+code, e.g. '/>' (aprs source only)
     is_object: bool = False            # APRS object/item rather than a station
+    aprs_consent: Optional[bool] = None  # APRS:Y / APRS:N token in a VarAC broadcast; None = not stated
 
     raw: Dict[str, Any] = field(default_factory=dict)
 

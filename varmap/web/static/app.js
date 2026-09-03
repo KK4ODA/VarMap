@@ -109,6 +109,7 @@
           <h5>Station tags</h5>
           <div class="lg chips"><span class="chip em">EMCOMM</span> EmComm <span class="chip">BBS</span> public BBS <span class="chip">EMAIL</span> email gateway <span class="chip">AI</span> AI gateway <span class="chip">DIPL</span> diploma programme</div>
           <div class="lg chips"><span class="chip pota">POTA</span> CQ tag (POTA, DX, FD…) <span class="chip away">⌛ AWAY</span> operator away <span class="chip fav">★</span> favourite <span class="chip">?</span> suspect position</div>
+          <div class="lg chips"><span class="chip aprs">APRS</span> heard on APRS via Graywolf <span class="chip consent-y">APRS:Y</span> station allows relay to APRS <span class="chip consent-n">APRS:N</span> relay refused</div>
           <h5>Station list line</h5>
           <div class="lg">last heard · distance bearing · band · SNR</div>
         </div>`;
@@ -299,6 +300,8 @@
     if (st.last_cq_tag) out.push(`<span class="chip pota">${esc(st.last_cq_tag)}</span>`);
     if (st.is_away) out.push('<span class="chip away">⌛ AWAY</span>');
     if (st.is_favorite) out.push('<span class="chip fav">★</span>');
+    if (st.aprs_consent === 1) out.push('<span class="chip consent-y" title="This station said APRS:Y - it may be relayed to APRS">APRS:Y</span>');
+    else if (st.aprs_consent === 0) out.push('<span class="chip consent-n" title="This station said APRS:N - never relayed to APRS">APRS:N</span>');
     if (st.position_suspect) out.push('<span class="chip" title="Implausible jump from previous position">?</span>');
     return out.join(" ");
   }
@@ -378,7 +381,9 @@
         <button id="d-copy" ${d.grid ? "" : "disabled"} title="Copy the grid square to the clipboard">Copy grid</button>
         <button id="d-fav" title="Mark as a favourite so you can filter on it">${d.is_favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
         <button id="d-hide" title="Hide this station from the map and list (it keeps being recorded)">${d.is_hidden ? "Unhide" : "Hide"}</button>
+        ${isAprs(d) && !unl ? `<button id="d-relay" title="Broadcast this APRS station's position on VarAC once, as 'APRS ${esc(d.callsign)} <GPS:...> via ${esc((S.health && S.health.varac && S.health.varac.mycall) || "me")}'. Counts against your hourly limit and every Position TX interlock">Relay to VarAC</button>` : ""}
       </div>
+      ${d.aprs_consent != null ? `<div class="muted" style="margin:4px 0">APRS relay consent: <b>${d.aprs_consent ? "given (APRS:Y)" : "refused (APRS:N)"}</b> · stated ${ageStr(d.aprs_consent_at)} ago</div>` : ""}
       <textarea id="d-notes" placeholder="Notes…" title="Your private notes about this station">${esc(d.notes || "")}</textarea>
       <div class="row"><button id="d-save-notes" title="Save the notes above">Save notes</button><span id="d-notes-msg" class="muted"></span></div>
       <h4 class="muted">Recent activity</h4>${heard}`;
@@ -390,6 +395,13 @@
     $("d-fav").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { is_favorite: d.is_favorite ? 0 : 1 }); refreshStations(); select(d.callsign); };
     $("d-hide").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { is_hidden: d.is_hidden ? 0 : 1 }); closeDetail(); refreshStations(true); };
     $("d-save-notes").onclick = async () => { await api(`/api/station/${encodeURIComponent(d.callsign)}`, { notes: $("d-notes").value }); $("d-notes-msg").textContent = "saved"; };
+    const relayBtn = $("d-relay");
+    if (relayBtn) relayBtn.onclick = async () => {
+      const dry = S.config && S.config.beacon && S.config.beacon.dry_run;
+      if (!dry && !confirm(`Broadcast ${d.callsign}'s APRS position on VarAC now, under your callsign?`)) return;
+      const r = await api(`/api/station/${encodeURIComponent(d.callsign)}/relay_to_varac`, {});
+      alert(r.ok ? (r.dry_run ? "Dry run logged: " : "Sent on VarAC: ") + r.message : "Not sent: " + r.error);
+    };
   }
   async function showTrack(cs) {
     clearTrack();
@@ -513,7 +525,7 @@
   async function openSettings(pane) {
     S.config = await api("/api/config"); bindConfig(S.config);
     modal.classList.remove("hidden"); if (pane) showPane(pane);
-    refreshSettingsInfo(); refreshBeaconPane(); refreshTilesPane();
+    refreshSettingsInfo(); refreshBeaconPane(); refreshTilesPane(); refreshAprsPane();
   }
   function showPane(p) {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.pane === p));
@@ -526,6 +538,9 @@
   modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!modal.classList.contains("hidden")) modal.classList.add("hidden"); else if (S.selected) closeDetail(); } });
   $("btn-save").onclick = async () => {
+    const gwDry = document.querySelector('[data-cfg="graywolf.dry_run"]');
+    const gwLive = gwDry && !gwDry.checked && (document.querySelector('[data-cfg="graywolf.mirror_enabled"]').checked || document.querySelector('[data-cfg="graywolf.gate_enabled"]').checked);
+    if (gwLive && !confirm("APRS dry run is OFF and mirroring or object relaying is enabled: VarMap will ask Graywolf to transmit on APRS under your callsign. Continue?")) return;
     try { const r = await api("/api/config", collectConfig()); S.config = r.config; $("save-result").textContent = "Saved."; S.pollMs = Math.max(2000, (S.config.varac.poll_interval_seconds || 10) * 1000); if (legend._render) legend._render(); refreshHealth(); refreshStations(true); }
     catch (e) { $("save-result").textContent = "Save failed: " + e.message; }
   };
@@ -542,6 +557,31 @@
     $("own-info").textContent = fmt(S.health.own);
     $("graywolf-info").textContent = fmt(S.health.graywolf || {});
   }
+  async function refreshAprsPane() {
+    if (modal.classList.contains("hidden")) return;
+    let s; try { s = await api("/api/aprs/status"); } catch (e) { return; }
+    const m = s.mirror || {}, g = s.gate || {};
+    $("aprs-status").textContent = [
+      `Mirror: ${m.enabled ? (m.dry_run ? "on (dry run)" : "on - LIVE") : "off"}${m.last ? " · last: " + (m.last.ok ? "ok " : "FAILED ") + (m.last.message || m.last.error || "") : ""}`,
+      `Object relay: ${g.enabled ? (g.dry_run ? "on (dry run)" : "on - LIVE") : "off"} · last pass ${g.last_run ? ageStr(g.last_run) + " ago" : "never"} · ${g.candidates || 0} candidates · ${g.objects || 0} objects · ${g.sent_last_hour || 0} sent last hour${g.last_error ? " · error: " + g.last_error : ""}`,
+    ].join("\n");
+    $("aprs-consenting").innerHTML = (s.consenting || []).map((c) => `<div class="r"><span>${esc((c.aprs_consent_at || "").slice(0, 16).replace("T", " "))}</span><span>${c.aprs_consent ? "APRS:Y" : "APRS:N"}</span><span>${esc(c.grid || "")}</span><span>${esc(c.callsign)} · heard ${ageStr(c.last_heard)} ago</span></div>`).join("") || '<div class="muted" style="padding:6px">No station has stated APRS consent yet.</div>';
+    $("aprs-log").innerHTML = (s.recent || []).map((r) => `<div class="r ${r.ok ? "" : "bad"} ${r.dry_run ? "dry" : ""}"><span>${esc((r.requested_at || "").slice(0, 19).replace("T", " "))}</span><span>${esc(r.trigger)}</span><span>${r.dry_run ? "dry-run" : r.ok ? "SENT" : "FAILED"}</span><span>${esc(r.message || "")} ${esc(r.error || "")}</span></div>`).join("") || '<div class="muted" style="padding:6px">Nothing sent to Graywolf yet.</div>';
+  }
+  $("btn-mirror-test").onclick = async () => {
+    await api("/api/config", collectConfig());
+    $("mirror-result").textContent = "sending…";
+    const r = await api("/api/aprs/mirror/send_test", {});
+    $("mirror-result").textContent = r.ok ? (r.dry_run ? "Dry run logged: " : "Sent: ") + r.message : "Not sent: " + (r.error || r.skipped);
+    refreshAprsPane();
+  };
+  $("btn-gate-run").onclick = async () => {
+    await api("/api/config", collectConfig());
+    $("gate-result").textContent = "running…";
+    const r = await api("/api/aprs/gate/run_now", {});
+    $("gate-result").textContent = r.ok ? `${r.sent} object(s) ${r.state && r.state.dry_run ? "logged (dry run)" : "sent"}` : "Failed: " + r.error;
+    refreshAprsPane();
+  };
   $("btn-graywolf-test").onclick = async () => {
     $("graywolf-test-result").textContent = "testing…";
     const body = { url: document.querySelector('[data-cfg="graywolf.url"]').value, username: document.querySelector('[data-cfg="graywolf.username"]').value, password: document.querySelector('[data-cfg="graywolf.password"]').value };
@@ -629,7 +669,7 @@
     setInterval(refreshHealth, 5000);
     setInterval(() => refreshStations(false), S.pollMs);
     setInterval(rerenderAges, 30000);
-    setInterval(() => { refreshBeaconPane(); refreshTilesPane(); refreshSettingsInfo(); }, 3000);
+    setInterval(() => { refreshBeaconPane(); refreshTilesPane(); refreshSettingsInfo(); refreshAprsPane(); }, 3000);
     setInterval(refreshBroadcasts, 15000);
     setInterval(refreshOwnTrack, 60000);
     if (S.health && !S.health.poller.connected && !(S.config && S.config.varac.db_path) && S.health.poller.last_error) openSettings("varac");

@@ -143,6 +143,33 @@ class GraywolfClient:
         _, payload, _ = self.request("GET", "/position")
         return payload if isinstance(payload, dict) else {}
 
+    # -- beacons (stages 3-4: VarMap asks Graywolf to transmit) ---------------------
+    def list_beacons(self) -> List[Dict[str, Any]]:
+        _, payload, _ = self.request("GET", "/beacons")
+        return payload if isinstance(payload, list) else (payload.get("beacons", []) if isinstance(payload, dict) else [])
+
+    def create_beacon(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        _, payload, _ = self.request("POST", "/beacons", body=body)
+        return payload if isinstance(payload, dict) else {}
+
+    def update_beacon(self, beacon_id: int, body: Dict[str, Any]) -> Dict[str, Any]:
+        _, payload, _ = self.request("PUT", f"/beacons/{beacon_id}", body=body)
+        return payload if isinstance(payload, dict) else {}
+
+    def delete_beacon(self, beacon_id: int) -> None:
+        self.request("DELETE", f"/beacons/{beacon_id}")
+
+    def send_beacon(self, beacon_id: int) -> Dict[str, Any]:
+        _, payload, _ = self.request("POST", f"/beacons/{beacon_id}/send")
+        return payload if isinstance(payload, dict) else {"status": payload}
+
+    def find_beacon(self, marker: str) -> Optional[Dict[str, Any]]:
+        """A beacon VarMap created earlier, recognised by a marker in its comment or object name."""
+        for b in self.list_beacons():
+            if marker and (marker in str(b.get("comment") or "") or marker == str(b.get("object_name") or "")):
+                return b
+        return None
+
     def test(self) -> Dict[str, Any]:
         """Login + version + a station count; never raises."""
         out: Dict[str, Any] = {"ok": False, "base": self.base}
@@ -210,6 +237,79 @@ def station_to_observation(st: Dict[str, Any], ident: str = "gw") -> Optional[Ob
              "speed_kt": (p or {}).get("speed_kt"), "course": (p or {}).get("course"),
              "alt_m": (p or {}).get("alt_m") if (p or {}).get("has_alt") else None},
     )
+
+
+VARMAP_MARK = "[VarMap]"   # goes into comments of beacons VarMap manages, so they can be found again
+
+
+def object_name_for(callsign: str) -> Optional[str]:
+    """APRS object names are at most 9 characters.  'KK4ODA-7' fits; 'F/KK4ODA/P' does
+    not, so the portable/prefix parts are dropped and the result checked again."""
+    cs = (callsign or "").strip().upper()
+    if not cs:
+        return None
+    if len(cs) <= 9:
+        return cs
+    from ..domain.callsign import normalise_callsign
+    base = normalise_callsign(cs)[1]
+    return base if 0 < len(base) <= 9 else None
+
+
+def grid_ambiguity(accuracy_m: Optional[float]) -> int:
+    """APRS position ambiguity (0-4) matching how precise the source really is:
+    exact GPS -> 0; a 6-char grid (±4 km) -> 2 (whole minutes, ~1.8 km);
+    a 4-char grid -> 3 (tens of minutes)."""
+    if accuracy_m is None or accuracy_m <= 100:
+        return 0
+    if accuracy_m <= 5000:
+        return 2
+    return 3
+
+
+def mirror_beacon_body(fix: OwnFix, callsign: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Body for VarMap's own APRS position beacon in Graywolf (stage 3)."""
+    comment = " ".join(x for x in [cfg.get("mirror_comment") or "via VarAC", VARMAP_MARK] if x)
+    body: Dict[str, Any] = {
+        "type": cfg.get("mirror_beacon_type") or "position",
+        "callsign": callsign, "enabled": True, "interval": int(cfg.get("mirror_interval_seconds") or 86400),
+        "use_gps": False, "latitude": round(fix.lat, 5), "longitude": round(fix.lon, 5),
+        "symbol_table": (cfg.get("mirror_symbol") or "/>")[0], "symbol": (cfg.get("mirror_symbol") or "/>")[1:2] or ">",
+        "comment": comment[:43], "ambiguity": int(cfg.get("mirror_ambiguity") or 0),
+        "smart_beacon": False, "messaging": False,
+    }
+    if cfg.get("send_path"):
+        body["send_path"] = cfg["send_path"]
+    if cfg.get("channel") not in (None, "", 0):
+        body["channel"] = int(cfg["channel"])
+    if cfg.get("path"):
+        body["path"] = cfg["path"]
+    if fix.altitude_m is not None:
+        body["alt_ft"] = round(fix.altitude_m * 3.28084)
+    return body
+
+
+def object_beacon_body(station: Dict[str, Any], object_name: str, callsign: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Body for a gated VarAC station as an APRS object (stage 4).  Grid-derived
+    positions carry ambiguity so nobody mistakes a 4 x 8 km cell for a point."""
+    tpl = cfg.get("gate_comment_template") or "VarAC {band} {grid}"
+    comment = tpl.format(band=station.get("last_band") or "", grid=station.get("grid") or "",
+                         call=station.get("callsign") or "").strip()
+    comment = " ".join(x for x in [comment, VARMAP_MARK] if x)
+    body: Dict[str, Any] = {
+        "type": cfg.get("gate_beacon_type") or "object",
+        "callsign": callsign, "object_name": object_name, "enabled": True,
+        "interval": int(cfg.get("gate_interval_seconds") or 86400),
+        "use_gps": False, "latitude": round(float(station["lat"]), 5), "longitude": round(float(station["lon"]), 5),
+        "symbol_table": (cfg.get("gate_symbol") or "/-")[0], "symbol": (cfg.get("gate_symbol") or "/-")[1:2] or "-",
+        "comment": comment[:43], "ambiguity": grid_ambiguity(station.get("accuracy_m")),
+        "smart_beacon": False, "messaging": False,
+        "send_path": cfg.get("gate_send_path") or "is_only",
+    }
+    if cfg.get("channel") not in (None, "", 0):
+        body["channel"] = int(cfg["channel"])
+    if cfg.get("path"):
+        body["path"] = cfg["path"]
+    return body
 
 
 def position_to_own_fix(pos: Dict[str, Any]) -> Optional[OwnFix]:

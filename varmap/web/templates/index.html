@@ -191,9 +191,10 @@
         <label title="Free text inserted where the template says {comment}">Comment <input data-cfg="beacon.comment"></label>
         <label title="Never transmit a position older than this. Protects against broadcasting a stale fix after the GPS stops">Max fix age (s) <input type="number" min="10" data-cfg="beacon.max_fix_age_seconds"></label>
         <label title="Safety cap on transmissions per hour, counting manual ones. Default 2; cannot be set above 6">Max transmissions / hour <input type="number" min="1" max="6" data-cfg="beacon.max_per_hour"></label>
+        <label title="Adds the token APRS:Y to your position broadcasts. It tells other VarMap users they may relay your position to the APRS network (aprs.fi and RF) as an object under their callsign. Untick to send APRS:N, which withdraws consent. Nothing is relayed for stations that never said APRS:Y"><input type="checkbox" data-cfg="beacon.aprs_consent"> Allow others to relay my position to APRS (adds APRS:Y)</label>
         <label title="VarAC normally holds a broadcast until the frequency is clear (DCD). If VarAC's 'Ignore DCD' box is ticked that protection is off, so with this guard on VarMap refuses to hand VarAC a position broadcast until the box is unticked. Switch off only if persistent noise keeps VarAC's BUSY light on and you accept the risk of transmitting over someone"><input type="checkbox" data-cfg="beacon.dcd_guard"> DCD guard: do not send while VarAC ignores DCD</label>
       </div>
-      <p class="muted">Placeholders: {gpstag} {lat} {lon} {grid} {call} {speed_kmh} {speed_mph} {course} {alt} {comment} {time}. VarAC broadcasts are limited to 150 bytes. Preview: <code id="beacon-preview" title="Exactly what would be transmitted right now">…</code></p>
+      <p class="muted">Placeholders: {gpstag} {lat} {lon} {grid} {call} {speed_kmh} {speed_mph} {course} {alt} {comment} {time} {aprsflag}. VarAC broadcasts are limited to 150 bytes. Preview: <code id="beacon-preview" title="Exactly what would be transmitted right now">…</code></p>
       <h4>Fixed interval</h4>
       <div class="grid2">
         <label title="Seconds between automatic position broadcasts. Default 1800 (30 minutes); minimum 300. With 'Only if moved' a parked station sends only the keepalive">Interval (s) <input type="number" min="300" step="60" data-cfg="beacon.fixed.interval_seconds"></label>
@@ -247,6 +248,46 @@
         <span id="graywolf-test-result" class="muted"></span>
       </div>
       <pre id="graywolf-info" class="info" title="Live state of the APRS feed"></pre>
+
+      <h4>Transmitting through Graywolf</h4>
+      <p class="muted">Everything below asks Graywolf to transmit on APRS under <b>your</b> callsign. It is off by default and starts in dry run. Graywolf decides the path (RF channel or APRS-IS only), so check Graywolf's own beacon settings too.</p>
+      <div class="row">
+        <label class="inline" title="Log what would be sent to Graywolf without sending. Untick only when you have checked the log and are happy"><input type="checkbox" data-cfg="graywolf.dry_run"> Dry run for APRS transmissions (log only)</label>
+      </div>
+      <div class="grid2">
+        <label title="Graywolf's send_path for beacons VarMap creates: blank = Graywolf's default (RF), is_only = APRS-IS internet only">Send path <select data-cfg="graywolf.send_path"><option value="">Graywolf default (RF)</option><option value="is_only">APRS-IS only (no RF)</option></select></label>
+        <label title="Graywolf radio channel id for RF beacons. Blank = Graywolf's default">RF channel id <input data-cfg="graywolf.channel" placeholder="blank = default"></label>
+        <label title="APRS digipeater path, e.g. WIDE1-1,WIDE2-1. Blank = Graywolf's default">Digipeater path <input data-cfg="graywolf.path" placeholder="blank = default"></label>
+      </div>
+
+      <h5 class="sub">My position on APRS (mirror)</h5>
+      <div class="grid2">
+        <label title="Each time VarMap really broadcasts your position on VarAC, also fire an APRS position beacon through Graywolf with the same fix. Independent of Graywolf's own beacons"><input type="checkbox" data-cfg="graywolf.mirror_enabled"> Mirror my VarAC position broadcasts to APRS</label>
+        <label title="APRS symbol table and code, two characters. /> car, /- house, /[ walker, /; camp, /k truck">Symbol <input data-cfg="graywolf.mirror_symbol" maxlength="2"></label>
+        <label title="Comment text on the APRS beacon (up to about 40 characters)">Comment <input data-cfg="graywolf.mirror_comment"></label>
+        <label title="APRS position ambiguity for your own beacon: 0 exact, 1 about 200 m, 2 about 2 km, 3 about 20 km">Ambiguity <input type="number" min="0" max="4" data-cfg="graywolf.mirror_ambiguity"></label>
+      </div>
+      <div class="row"><button id="btn-mirror-test" title="Fire the mirror beacon now with your current position (respects dry run)">Send my position to APRS now</button><span id="mirror-result" class="muted"></span></div>
+
+      <h5 class="sub">VarAC stations on APRS (objects)</h5>
+      <p class="muted">Relays <b>only</b> stations whose latest VarAC broadcast carried <code>APRS:Y</code>, as APRS objects under your callsign, with position ambiguity for grid-only positions. A station that sends <code>APRS:N</code> is dropped, consent lapses after the days set below, and objects are retired when a station goes quiet. This rule is enforced in the server, not just here.</p>
+      <div class="grid2">
+        <label title="Turn object relaying on. Off by default"><input type="checkbox" data-cfg="graywolf.gate_enabled"> Relay consenting VarAC stations to APRS</label>
+        <label title="Where the objects go: APRS-IS only (recommended, no RF airtime) or Graywolf's default RF channel">Objects send path <select data-cfg="graywolf.gate_send_path"><option value="is_only">APRS-IS only (recommended)</option><option value="">Graywolf default (RF)</option></select></label>
+        <label title="APRS symbol for relayed stations">Object symbol <input data-cfg="graywolf.gate_symbol" maxlength="2"></label>
+        <label title="Comment on each object. Placeholders {band} {grid} {call}">Object comment <input data-cfg="graywolf.gate_comment_template"></label>
+        <label title="Cap on relayed objects per hour across all stations. Hard cap 30">Max objects / hour <input type="number" min="1" max="30" data-cfg="graywolf.gate_max_per_hour"></label>
+        <label title="Never re-send the same station sooner than this. Minimum 600">Per-station spacing (s) <input type="number" min="600" step="60" data-cfg="graywolf.gate_min_interval_seconds"></label>
+        <label title="Do not relay a position older than this">Max position age (s) <input type="number" min="60" data-cfg="graywolf.gate_max_position_age_seconds"></label>
+        <label title="A station's APRS:Y must be repeated within this many days or relaying stops. Cap 90">Consent valid for (days) <input type="number" min="1" max="90" data-cfg="graywolf.gate_consent_max_age_days"></label>
+        <label title="Delete a station's object when it has been silent this long">Retire after silence (h) <input type="number" min="1" data-cfg="graywolf.gate_retire_hours"></label>
+      </div>
+      <div class="row"><button id="btn-gate-run" title="Run one relay pass now (respects dry run and every limit)">Run relay pass now</button><span id="gate-result" class="muted"></span></div>
+      <div id="aprs-status" class="info" title="Live state of mirror and object relaying"></div>
+      <h5 class="sub">Stations that have stated APRS consent</h5>
+      <div id="aprs-consenting" class="log"></div>
+      <h5 class="sub">APRS transmit log</h5>
+      <div id="aprs-log" class="log"></div>
     </div>
 
     <div class="pane" data-pane="tiles">

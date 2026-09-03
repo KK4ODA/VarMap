@@ -50,6 +50,27 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "backfill_seconds": 86400,        # first poll after enabling
         "bbox": "",                       # '' = whole world; else sw_lat,sw_lon,ne_lat,ne_lon
         "use_for_own_position": True,     # offer Graywolf's GPS fix in the own-position ladder
+        # --- transmitting through Graywolf (stages 3-4); everything below is inert until enabled
+        "dry_run": True,                  # log what would be sent to Graywolf, send nothing
+        "send_path": "",                  # beacon send_path for the mirror ('' = Graywolf default, 'is_only' = APRS-IS only)
+        "channel": "",                    # Graywolf radio channel id for RF beacons ('' = Graywolf default)
+        "path": "",                       # APRS digipeater path ('' = Graywolf default)
+        "mirror_enabled": False,          # stage 3: fire an APRS position beacon after each VarAC position broadcast
+        "mirror_comment": "via VarAC",
+        "mirror_symbol": "/>",            # APRS symbol table + code
+        "mirror_ambiguity": 0,
+        "mirror_interval_seconds": 86400, # the beacon's own schedule in Graywolf (long: VarMap triggers it)
+        "gate_enabled": False,            # stage 4: consenting VarAC stations as APRS objects
+        "gate_send_path": "is_only",      # objects go to APRS-IS only by default (no RF)
+        "gate_symbol": "/-",
+        "gate_comment_template": "VarAC {band} {grid}",
+        "gate_max_per_hour": 10,          # hard cap 30
+        "gate_min_interval_seconds": 1800,  # per station; floor 600
+        "gate_max_position_age_seconds": 21600,
+        "gate_consent_max_age_days": 30,  # APRS:Y must be restated within this many days; cap 90
+        "gate_retire_hours": 24,          # delete the object when the station has been silent this long
+        "gate_run_interval_seconds": 60,
+        "gate_interval_seconds": 86400,
     },
     "staleness": {"fresh_minutes": 30, "recent_hours": 2, "stale_hours": 24, "hide_after_days": 30},
     "history": {"keep_days": 90, "max_positions_per_station": 1000, "prune_interval_minutes": 60},
@@ -70,8 +91,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "mode": "fixed",                  # fixed | smart
         "method": "broadcast",            # broadcast | beacon   (beacon = one-time advanced beacon, experimental)
         "broadcast_to": "ALL",
-        "message_template": "{gpstag} {grid} {comment}",
+        "message_template": "{gpstag} {grid} {comment} {aprsflag}",
         "comment": "VarMap",
+        "aprs_consent": False,            # adds APRS:Y to broadcasts: others may relay my position to APRS
         "coord_decimals": 5,              # 5 = ~1 m; 3 = ~100 m; 2 = ~1 km (privacy)
         "dcd_guard": True,                # refuse to hand VarAC a broadcast while its 'Ignore DCD' box is ticked
         "max_fix_age_seconds": 900,       # never beacon a stale position

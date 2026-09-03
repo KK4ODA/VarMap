@@ -126,21 +126,39 @@ language set to English.
 
 ## APRS via Graywolf
 
-VarMap can show the APRS world on the same map. It talks to
-[Graywolf](https://github.com/chrissnell/graywolf), a modern APRS station
-(software modem, digipeater, iGate, web UI), through Graywolf's REST API:
+VarMap talks to [Graywolf](https://github.com/chrissnell/graywolf), a modern APRS
+station (software modem, digipeater, iGate, web UI), through Graywolf's REST API.
+Settings → APRS holds the Graywolf URL (default `http://127.0.0.1:8080`) and a
+Graywolf login (Graywolf has no API keys; use a dedicated account, the password is
+kept in `config.json`).
 
-- **Stations heard on APRS** appear as diamond markers (squares for APRS
-  objects) with exact coordinates, symbol and comment, filterable with
-  *Position source = APRS* and switchable off in the Flags menu.
-- **Your position from Graywolf's GPS**, with speed and heading, as the
-  preferred rung of the own-position ladder when Graywolf has a live fix.
+**Receive (always safe)**
 
-Settings → APRS: Graywolf URL (default `http://127.0.0.1:8080`), a Graywolf
-login (Graywolf has no API keys; use a dedicated account, the password is kept
-in `config.json`), poll interval, optional bounding box, and a Test connection
-button. This integration is receive-only: VarMap never transmits through Graywolf.
-Gating VarAC stations to APRS as objects is planned as an opt-in feature.
+- APRS stations appear as diamond markers (squares for APRS objects) with exact
+  coordinates, symbol and comment; filter with *Position source = APRS* or hide
+  them in Flags.
+- Your own position can come from Graywolf's GPS, with speed and heading.
+
+**Transmit (off by default, dry run by default, every action logged)**
+
+- **Mirror**: after each real VarAC position broadcast, VarMap fires its own APRS
+  position beacon in Graywolf with the same fix.
+- **Relay VarAC stations as APRS objects**: only stations whose latest VarAC
+  broadcast carried the consent token `APRS:Y`. Objects go to APRS-IS only by
+  default, carry APRS position ambiguity for grid-only positions (a 6-character
+  grid is a 4 x 8 km cell, not a point), are rate-limited (default 10 per hour,
+  hard cap 30; per-station spacing at least 10 minutes), lapse when consent is
+  not restated (default 30 days) and are retired when the station goes quiet.
+  `APRS:N` withdraws consent immediately. The rule lives in the server query,
+  not in the UI.
+- **Relay an APRS station to VarAC**: a button in the station panel broadcasts
+  `APRS <call> <GPS:…> via <you>` once, subject to every Position TX interlock.
+
+**The consent token.** Tick *Allow others to relay my position to APRS* in
+Position TX and your broadcasts end with `APRS:Y` (six bytes, human-readable, so
+VarAC users without VarMap can adopt it too). Anyone running VarMap with object
+relaying enabled may then put your VarAC position on APRS under their callsign.
+No token means no.
 
 ## Offline maps
 

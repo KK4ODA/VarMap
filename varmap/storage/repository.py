@@ -76,6 +76,9 @@ class Repository:
                 c.execute("ALTER TABLE station ADD COLUMN aprs_symbol TEXT")
             if "is_object" not in scols:
                 c.execute("ALTER TABLE station ADD COLUMN is_object INTEGER NOT NULL DEFAULT 0")
+            if "aprs_consent" not in scols:
+                c.execute("ALTER TABLE station ADD COLUMN aprs_consent INTEGER")
+                c.execute("ALTER TABLE station ADD COLUMN aprs_consent_at TEXT")
 
     # -- meta / cursors ---------------------------------------------------
     def meta_get(self, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -200,6 +203,11 @@ class Repository:
         else:
             c.execute("UPDATE station SET heard_count=heard_count+1, first_heard=MIN(first_heard, ?), updated_at=? "
                       "WHERE callsign=?", (heard_iso, now_iso, callsign))
+        if obs.aprs_consent is not None:
+            # The newest statement wins; an APRS:N after an APRS:Y withdraws consent.
+            c.execute("UPDATE station SET aprs_consent=?, aprs_consent_at=? WHERE callsign=? "
+                      "AND (aprs_consent_at IS NULL OR aprs_consent_at <= ?)",
+                      (1 if obs.aprs_consent else 0, heard_iso, callsign, heard_iso))
         if heard_iso < (st["first_heard"] or heard_iso):
             c.execute("UPDATE station SET first_heard=? WHERE callsign=?", (heard_iso, callsign))
             st["first_heard"] = heard_iso
@@ -368,6 +376,48 @@ class Repository:
         if real_only:
             sql += " AND dry_run=0"
         return self.conn().execute(sql, (since_iso,)).fetchone()[0]
+
+    # -- APRS gating (stage 4) ------------------------------------------------------------
+    def gate_candidates(self, max_position_age_s: float) -> List[Dict[str, Any]]:
+        """Stations that have said APRS:Y, are not us, and have a position newer than the
+        one last gated (or never gated).  Consent is enforced HERE, not in the UI."""
+        cutoff = iso_utc(now_utc() - timedelta(seconds=max_position_age_s))
+        return [dict(r) for r in self.conn().execute(
+            "SELECT s.callsign, s.base_callsign, s.lat, s.lon, s.grid, s.accuracy_m, s.position_source, s.position_time, "
+            "s.last_band, s.aprs_consent_at, g.beacon_id, g.object_name, g.last_sent_at, g.last_lat, g.last_lon, g.sent_count "
+            "FROM station s LEFT JOIN aprs_gate g ON g.callsign = s.callsign "
+            "WHERE s.aprs_consent = 1 AND s.is_own = 0 AND s.is_hidden = 0 AND s.lat IS NOT NULL "
+            "AND s.position_source <> 'aprs' AND s.position_time >= ? "
+            "AND (g.last_sent_at IS NULL OR s.position_time > g.last_sent_at) ORDER BY s.position_time DESC", (cutoff,))]
+
+    def gate_get(self, callsign: str) -> Optional[Dict[str, Any]]:
+        r = self.conn().execute("SELECT * FROM aprs_gate WHERE callsign=?", (callsign.upper(),)).fetchone()
+        return dict(r) if r else None
+
+    def gate_upsert(self, callsign: str, **f: Any) -> None:
+        with self._write_lock:
+            c = self.conn()
+            row = self.gate_get(callsign) or {"callsign": callsign.upper(), "object_name": f.get("object_name") or callsign.upper(),
+                                              "beacon_id": None, "last_sent_at": None, "last_lat": None, "last_lon": None,
+                                              "sent_count": 0, "last_error": None}
+            row.update({k: v for k, v in f.items() if k in row})
+            c.execute("INSERT INTO aprs_gate(callsign, object_name, beacon_id, last_sent_at, last_lat, last_lon, sent_count, last_error) "
+                      "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(callsign) DO UPDATE SET object_name=excluded.object_name, "
+                      "beacon_id=excluded.beacon_id, last_sent_at=excluded.last_sent_at, last_lat=excluded.last_lat, "
+                      "last_lon=excluded.last_lon, sent_count=excluded.sent_count, last_error=excluded.last_error",
+                      (row["callsign"], row["object_name"], row["beacon_id"], row["last_sent_at"], row["last_lat"],
+                       row["last_lon"], row["sent_count"], row["last_error"]))
+
+    def gate_all(self) -> List[Dict[str, Any]]:
+        return [dict(r) for r in self.conn().execute("SELECT * FROM aprs_gate ORDER BY last_sent_at DESC")]
+
+    def gate_delete(self, callsign: str) -> None:
+        with self._write_lock:
+            self.conn().execute("DELETE FROM aprs_gate WHERE callsign=?", (callsign.upper(),))
+
+    def gate_sent_since(self, since_iso: str) -> int:
+        return self.conn().execute("SELECT COUNT(*) FROM beacon_tx WHERE method='graywolf_object' AND ok=1 AND dry_run=0 "
+                                   "AND requested_at >= ?", (since_iso,)).fetchone()[0]
 
     # -- retention ----------------------------------------------------------------
     def prune(self, keep_days: int, max_positions_per_station: int) -> Dict[str, int]:

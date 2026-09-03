@@ -113,6 +113,39 @@ def create_app(rt) -> Flask:
                            body.get("password") or g.get("password"))
         return jsonify(c.test())
 
+    @app.route("/api/aprs/status")
+    def api_aprs_status():
+        s = rt.graywolf_tx.snapshot()
+        s["gate_objects"] = rt.repo.gate_all()
+        s["recent"] = [r for r in rt.repo.beacon_tx_recent(limit=60) if str(r.get("method", "")).startswith("graywolf")][:30]
+        s["consenting"] = [dict(r) for r in rt.repo.conn().execute(
+            "SELECT callsign, grid, aprs_consent, aprs_consent_at, last_heard FROM station WHERE aprs_consent IS NOT NULL "
+            "ORDER BY aprs_consent_at DESC LIMIT 50")]
+        return jsonify(s)
+
+    @app.route("/api/aprs/mirror/send_test", methods=["POST"])
+    def api_aprs_mirror_test():
+        fix = rt.tracker.current()
+        if not fix:
+            return jsonify({"ok": False, "error": "no position fix"})
+        return jsonify(rt.graywolf_tx.mirror(fix, "manual"))
+
+    @app.route("/api/aprs/gate/run_now", methods=["POST"])
+    def api_aprs_gate_run():
+        try:
+            n = rt.graywolf_tx.gate_once()
+            return jsonify({"ok": True, "sent": n, "state": rt.graywolf_tx.snapshot()["gate"]})
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": str(e)})
+
+    @app.route("/api/station/<callsign>/relay_to_varac", methods=["POST"])
+    def api_relay_to_varac(callsign: str):
+        st = rt.repo.station(callsign)
+        if not st:
+            abort(404)
+        body = request.get_json(force=True, silent=True) or {}
+        return jsonify(rt.beacon.relay_to_varac(st, (body.get("comment") or "")[:40]))
+
     @app.route("/api/poll_now", methods=["POST"])
     def api_poll_now():
         rt.poller.wake()

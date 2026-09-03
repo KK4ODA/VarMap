@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
 from ..domain.callsign import normalise_callsign
-from ..domain.gpstag import parse_position_text
+from ..domain.gpstag import parse_aprs_consent, parse_position_text
 from ..domain.grid import grid_accuracy_m, grid_to_latlon, normalise_grid, split_locator
 from ..domain.timeparse import parse_varac_time
 from .contracts import Observation
@@ -264,7 +264,7 @@ class VaracDbSource:
             grid=grid, lat=lat, lon=lon, accuracy_m=acc,
             snr_db=d.get("snr"), frequency_hz=d.get("frequency"), band=d.get("band"),
             is_own=self._is_own(callsign, d.get("snr")),
-            text=text[:200],
+            text=text[:200], aprs_consent=parse_aprs_consent(text),
             raw={"id": d["id"], "to": d.get("to_callsign"), "via": d.get("via_callsign")},
         )
 

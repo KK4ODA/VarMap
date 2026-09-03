@@ -17,7 +17,7 @@ import time
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from ..domain.gpstag import format_gps_tag
+from ..domain.gpstag import APRS_CONSENT_NO, APRS_CONSENT_YES, format_gps_tag
 from ..domain.smartbeacon import Fix, make_policy
 from ..domain.timeparse import iso_utc, now_utc, parse_iso
 from ..integration import varac_tx
@@ -131,9 +131,23 @@ class BeaconService(threading.Thread):
             alt=f"{fix.altitude_m:.0f}" if fix.altitude_m is not None else "",
             comment=bc.get("comment") or "",
             time=now_utc().strftime("%H%Mz"),
+            aprsflag=APRS_CONSENT_YES if bc.get("aprs_consent") else "",
         )
-        tpl = bc.get("message_template") or "{gpstag} {grid} {comment}"
+        tpl = bc.get("message_template") or "{gpstag} {grid} {comment} {aprsflag}"
+        if bc.get("aprs_consent") and "{aprsflag}" not in tpl:
+            tpl += " {aprsflag}"   # consent must reach the air even with an older custom template
         msg = " ".join(tpl.format_map(fields).split())
+        return msg[:varac_tx.BROADCAST_MAX_BYTES]
+
+    def relay_message(self, station: Dict[str, Any], comment: str = "") -> str:
+        """Stage 5: an APRS station's position as a VarAC broadcast, e.g.
+        'APRS KK4ODA-9 <GPS:33.86000,-84.30000> via KK4ODA'."""
+        dec = int((self.cfg.get("beacon") or {}).get("coord_decimals") or 5)
+        parts = ["APRS", station["callsign"], format_gps_tag(float(station["lat"]), float(station["lon"]), dec)]
+        if comment:
+            parts.append(comment)
+        parts.append(f"via {self.vc.mycall()}")
+        msg = " ".join(" ".join(parts).split())
         return msg[:varac_tx.BROADCAST_MAX_BYTES]
 
     def preview(self) -> Dict[str, Any]:
@@ -265,10 +279,13 @@ class BeaconService(threading.Thread):
                 self._transmit(bc, fix, d.reason)
 
     # -- transmit ------------------------------------------------------------------
-    def _transmit(self, bc: Dict[str, Any], fix: OwnFix, trigger: str) -> Dict[str, Any]:
+    def _transmit(self, bc: Dict[str, Any], fix: OwnFix, trigger: str, message: Optional[str] = None) -> Dict[str, Any]:
         method = (bc.get("method") or "broadcast").lower()
         dry = bool(bc.get("dry_run"))
-        message = self.build_message(fix, bc) if method == "broadcast" else f"(one-time advanced beacon: grid {fix.grid})"
+        if message is None:
+            message = self.build_message(fix, bc) if method == "broadcast" else f"(one-time advanced beacon: grid {fix.grid})"
+        else:
+            method = "broadcast"   # relayed text always goes out as a broadcast
         requested = iso_utc(now_utc())
         ok, err = True, None
         if not dry:
@@ -292,6 +309,13 @@ class BeaconService(threading.Thread):
             policy.mark_sent(Fix(fix.lat, fix.lon, fix.time, fix.speed_kmh, fix.course_deg), now_utc())
             self._last_fail_at = 0.0
             log.info("%s %s via %s: %s", "DRY-RUN" if dry else "SENT", trigger, method, message)
+            if not dry and not trigger.startswith("relay"):
+                try:   # stage 3: mirror our own position to APRS through Graywolf (no-op unless enabled)
+                    gtx = getattr(self.rt, "graywolf_tx", None)
+                    if gtx is not None:
+                        gtx.mirror(fix, trigger)
+                except Exception as e:  # noqa: BLE001
+                    log.debug("APRS mirror hook failed: %s", e)
         else:
             self._last_fail_at = time.time()
             self._last_fail_reason = err or "unknown"
@@ -324,6 +348,21 @@ class BeaconService(threading.Thread):
             row = self._transmit(bc, fix, "manual")
             return {"ok": bool(row["ok"]), "error": row.get("error"), "message": row.get("message"),
                     "dry_run": bool(row.get("dry_run"))}
+
+    def relay_to_varac(self, station: Dict[str, Any], comment: str = "") -> Dict[str, Any]:
+        """Stage 5: broadcast an APRS station's position on VarAC.  Manual, one-off,
+        subject to every interlock and to the same hourly cap as our own broadcasts."""
+        if not station or station.get("lat") is None:
+            return {"ok": False, "error": "station has no position"}
+        bc = clamp_beacon_config(self.cfg.get("beacon"))
+        fix = self.tracker.current()
+        with self._lock:
+            blocked = self._blocked_reason(bc, fix)
+            if blocked:
+                return {"ok": False, "error": blocked}
+            msg = self.relay_message(station, comment)
+            row = self._transmit(bc, fix, f"relay:{station['callsign']}", message=msg)
+            return {"ok": bool(row["ok"]), "error": row.get("error"), "message": msg, "dry_run": bool(row.get("dry_run"))}
 
     def set_enabled(self, enabled: bool, dry_run: Optional[bool] = None) -> None:
         patch: Dict[str, Any] = {"beacon": {"enabled": bool(enabled)}}

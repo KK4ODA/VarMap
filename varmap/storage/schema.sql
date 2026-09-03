@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS station (
 
     aprs_symbol         TEXT,           -- APRS symbol table+code when heard via Graywolf
     is_object           INTEGER NOT NULL DEFAULT 0,   -- APRS object/item
+    aprs_consent        INTEGER,        -- latest APRS:Y (1) / APRS:N (0) token seen in this station's broadcasts; NULL = never stated
+    aprs_consent_at     TEXT,
 
     op_name             TEXT,
     qth                 TEXT,
@@ -118,6 +120,17 @@ CREATE TABLE IF NOT EXISTS beacon_tx (
     frequency_hz INTEGER                  -- VarAC's frequency at hand-over (from VarAC.log)
 );
 CREATE INDEX IF NOT EXISTS beacon_tx_time_idx ON beacon_tx(requested_at DESC);
+
+-- ── APRS object gating state (stage 4): one Graywolf object beacon per gated station ──
+CREATE TABLE IF NOT EXISTS aprs_gate (
+    callsign     TEXT PRIMARY KEY,
+    object_name  TEXT NOT NULL,
+    beacon_id    INTEGER,
+    last_sent_at TEXT,
+    last_lat     REAL, last_lon REAL,
+    sent_count   INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT
+);
 
 CREATE TABLE IF NOT EXISTS source_cursor (
     source_id    TEXT PRIMARY KEY,
