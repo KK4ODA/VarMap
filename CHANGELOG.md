@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.6 (2026-09-03)
+
+- New position-age colours: fresh green, recent light yellow, stale half red with a light border, old open circle with a grey border.
+
 ## 0.3.5 (2026-09-03)
 
 - Clarify in the Position TX tab that Preferred bands applies to every VarAC transmission, including APRS-to-VarAC relays.
