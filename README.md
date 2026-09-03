@@ -4,7 +4,15 @@ VarMap watches a running (or stopped) VarAC installation, extracts every station
 position it can find, and plots the network on a map. It can also read your own
 position from VarAC and transmit it through VarAC, either at a fixed interval or
 with smart timing. Map tiles are cached locally and whole regions can be
-downloaded for offline use.
+downloaded for offline use. With [Graywolf](https://github.com/chrissnell/graywolf)
+alongside, the APRS network shares the same map.
+
+![VarMap: VarAC stations (circles, coloured by age) and APRS stations via Graywolf (diamonds) around the south-eastern US](docs/images/varmap-main.png)
+
+*Circles are VarAC stations coloured by position age, diamonds are APRS stations
+heard through Graywolf, the magenta ring is the operator's own station, and
+numbered badges are clusters. The status bar shows VarAC polling, the own
+position source and the live APRS feed.*
 
 VarAC has no API. VarMap integrates the way HamLink does: it reads VarAC's SQLite
 database **read-only**, reads VarAC's `.ini`, tails VarAC's optional GPS log, and
