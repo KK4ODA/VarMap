@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
 from ..domain.callsign import normalise_callsign
-from ..domain.gpstag import parse_aprs_consent, parse_position_text
+from ..domain.gpstag import parse_aprs_consent, parse_position_text, parse_relay
 from ..domain.grid import grid_accuracy_m, grid_to_latlon, normalise_grid, split_locator
 from ..domain.timeparse import parse_varac_time
 from .contracts import Observation
@@ -253,19 +253,47 @@ class VaracDbSource:
             return None
         text = d.get("broadcast_message") or ""
         pos = parse_position_text(text)
+        relay = parse_relay(text)
         source = "broadcast"
         grid = lat = lon = acc = None
-        if pos:
+        if pos and not relay:
             source = "broadcast_gps" if pos.kind == "gps" else "broadcast_grid"
             lat, lon, grid, acc = pos.lat, pos.lon, pos.grid, pos.accuracy_m
+        # A relayed message ('APRS KN4PLO <GPS:..> via KK4ODA') is a heard event for the
+        # SENDER without a position; the position itself is emitted separately for the
+        # named station by relayed_observation().
         return Observation(
             callsign=callsign, heard_at=heard_at, source=source,
             source_ref=f"{self.identity}|broadcast:{d['id']}", frame_kind="broadcast",
             grid=grid, lat=lat, lon=lon, accuracy_m=acc,
             snr_db=d.get("snr"), frequency_hz=d.get("frequency"), band=d.get("band"),
             is_own=self._is_own(callsign, d.get("snr")),
-            text=text[:200], aprs_consent=parse_aprs_consent(text),
-            raw={"id": d["id"], "to": d.get("to_callsign"), "via": d.get("via_callsign")},
+            text=text[:200], aprs_consent=parse_aprs_consent(text) if not relay else None,
+            raw={"id": d["id"], "to": d.get("to_callsign"), "via": d.get("via_callsign"),
+                 "relayed": relay[0] if relay else None},
+        )
+
+    def relayed_observation(self, row: sqlite3.Row) -> Optional[Observation]:
+        """Second observation from a relay-format broadcast: the position for the
+        station named in the message, source 'relayed' (second-hand, below a
+        direct APRS/GPS observation in precedence)."""
+        d = dict(row)
+        text = d.get("broadcast_message") or ""
+        relay = parse_relay(text)
+        pos = parse_position_text(text)
+        heard_at = parse_varac_time(d.get("broadcast_time"))
+        if not relay or not pos or heard_at is None:
+            return None
+        target, _ = normalise_callsign(relay[0])
+        sender, _ = normalise_callsign(d.get("from_callsign") or "")
+        if not target or target == sender:
+            return None
+        return Observation(
+            callsign=target, heard_at=heard_at, source="relayed",
+            source_ref=f"{self.identity}|broadcast:{d['id']}:relayed", frame_kind="relayed",
+            grid=pos.grid, lat=pos.lat, lon=pos.lon, accuracy_m=pos.accuracy_m,
+            band=d.get("band"), text=f"relayed on VarAC by {sender}",
+            raw={"id": d["id"], "relayed_by": sender},
         )
 
     def vmail_to_observation(self, row: sqlite3.Row) -> Optional[Observation]:

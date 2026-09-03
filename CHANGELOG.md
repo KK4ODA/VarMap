@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 (2026-09-03)
+
+- Fix: a relayed position broadcast ('APRS KN4PLO <GPS:..> via KK4ODA') was attributed to the relaying station; it now belongs to the named station (source 'relayed') and existing databases are repaired at start-up.
+- Start-up integrity check of VarMap's own database; a damaged file is quarantined and rebuilt from VarAC's history.
+- Clearer position-source labels in the station panel.
+
 ## 0.3.0 (2026-09-03)
 
 - Built-in update check (GitHub releases, every 12 h) with an Update pill; one-click self-update for the installed Windows build with SHA-256 verification; releases now ship SHA256SUMS.txt.

@@ -44,7 +44,43 @@ class Repository:
         self._local = threading.local()
         self._write_lock = threading.RLock()
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        self.quarantined: Optional[str] = None
+        self.integrity: str = "unchecked"
+        self._check_and_quarantine()
         self.init_schema()
+
+    def _check_and_quarantine(self) -> None:
+        """Start-up integrity check.  Our database is a cache of VarAC's history, so a
+        damaged file is moved aside and rebuilt rather than nursed along.  User notes
+        and favourites in the damaged file are lost; everything else comes back."""
+        if not os.path.isfile(self.path):
+            self.integrity = "new"
+            return
+        try:
+            c = sqlite3.connect(self.path, timeout=15)
+            try:
+                row = c.execute("PRAGMA quick_check").fetchone()
+                self.integrity = "ok" if row and row[0] == "ok" else f"damaged: {row[0] if row else '?'}"
+            finally:
+                c.close()
+        except sqlite3.DatabaseError as e:
+            self.integrity = f"damaged: {e}"
+        if self.integrity == "ok":
+            return
+        stamp = now_utc().strftime("%Y%m%d-%H%M%S")
+        moved = []
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            src = self.path + suffix
+            if os.path.isfile(src):
+                dst = f"{self.path}.damaged-{stamp}{suffix}"
+                try:
+                    os.replace(src, dst)
+                    moved.append(dst)
+                except OSError as e:
+                    log.error("could not quarantine %s: %s", src, e)
+        self.quarantined = moved[0] if moved else None
+        log.error("station database failed its integrity check (%s); moved aside as %s and rebuilding from VarAC",
+                  self.integrity, self.quarantined)
 
     # -- connections -----------------------------------------------------
     def conn(self) -> sqlite3.Connection:
@@ -79,6 +115,38 @@ class Repository:
             if "aprs_consent" not in scols:
                 c.execute("ALTER TABLE station ADD COLUMN aprs_consent INTEGER")
                 c.execute("ALTER TABLE station ADD COLUMN aprs_consent_at TEXT")
+        self._repair_relay_attribution()
+
+    def _repair_relay_attribution(self) -> int:
+        """One-time repair (versions <= 0.3.0): positions parsed out of relay-format
+        broadcasts ('APRS X <GPS:..> via Y') were attributed to the SENDER.  Remove
+        those position rows and recompute the affected stations' current position."""
+        if self.meta_get("repair_relay_attribution") == "1":
+            return 0
+        c = self.conn()
+        with self._write_lock:
+            bad = [dict(r) for r in c.execute(
+                "SELECT sp.id, sp.callsign, sp.source_ref FROM station_position sp JOIN station_heard sh "
+                "ON sh.source_ref = sp.source_ref WHERE sh.frame_kind='broadcast' AND "
+                "(sh.text LIKE 'APRS % via %' OR sh.text LIKE 'RELAY % via %' OR sh.text LIKE 'POS % via %')")]
+            for b in bad:
+                c.execute("DELETE FROM station_position WHERE id=?", (b["id"],))
+                c.execute("UPDATE station SET position_count=MAX(position_count-1, 0) WHERE callsign=?", (b["callsign"],))
+            for cs in {b["callsign"] for b in bad}:
+                best = c.execute("SELECT * FROM station_position WHERE callsign=? ORDER BY heard_at DESC LIMIT 1", (cs,)).fetchone()
+                if best:
+                    c.execute("UPDATE station SET lat=?, lon=?, grid=?, accuracy_m=?, position_source=?, position_time=?, "
+                              "position_ref=?, position_suspect=?, updated_at=? WHERE callsign=?",
+                              (best["lat"], best["lon"], best["grid"], best["accuracy_m"], best["source"], best["heard_at"],
+                               best["source_ref"], best["suspect"], iso_utc(now_utc()), cs))
+                else:
+                    c.execute("UPDATE station SET lat=NULL, lon=NULL, grid=NULL, accuracy_m=NULL, position_source=NULL, "
+                              "position_time=NULL, position_ref=NULL, updated_at=? WHERE callsign=?", (iso_utc(now_utc()), cs))
+            c.execute("INSERT INTO app_meta(key, value) VALUES('repair_relay_attribution','1') "
+                      "ON CONFLICT(key) DO UPDATE SET value='1'")
+        if bad:
+            log.info("repaired %d position(s) wrongly attributed to relaying stations", len(bad))
+        return len(bad)
 
     # -- meta / cursors ---------------------------------------------------
     def meta_get(self, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -338,6 +406,8 @@ class Repository:
             "positions": c.execute("SELECT COUNT(*) FROM station_position").fetchone()[0],
             "newest_heard": c.execute("SELECT MAX(last_heard) FROM station").fetchone()[0],
             "db_bytes": os.path.getsize(self.path) if os.path.isfile(self.path) else 0,
+            "db_integrity": self.integrity,
+            "db_quarantined": self.quarantined,
         }
 
     # -- own position -----------------------------------------------------------

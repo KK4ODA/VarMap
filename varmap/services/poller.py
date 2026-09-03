@@ -207,6 +207,13 @@ class Poller(threading.Thread):
                 if table == "cqframe" and o.source == "cq" and not read_cq:
                     continue
                 obs.append(o)
+                if table == "broadcast" and o.raw.get("relayed"):
+                    try:
+                        r2 = src.relayed_observation(r)
+                        if r2:
+                            obs.append(r2)
+                    except Exception as e:  # noqa: BLE001
+                        log.debug("relayed observation failed: %s", e)
             hwm = int(rows[-1]["id"])
             stats = self.repo.ingest(obs, {sid: str(hwm)})
             total += len(rows)

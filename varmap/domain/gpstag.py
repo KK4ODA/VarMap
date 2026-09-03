@@ -154,6 +154,19 @@ def parse_position_text(text: Optional[str]) -> Optional[TextPosition]:
     return None
 
 
+# A relayed position: 'APRS KN4PLO <GPS:...> via KK4ODA' (VarMap's Relay-to-VarAC format).
+# The position belongs to the station NAMED in the message, never to the sender.
+RELAY_RE = re.compile(r"^\s*(?:APRS|RELAY|POS)\s+([A-Z0-9]{1,3}[0-9][A-Z0-9]{0,4}(?:-[0-9A-Z]{1,2})?(?:/[A-Z0-9]+)?)\b.*\bvia\s+([A-Z0-9/-]+)", re.I)
+
+
+def parse_relay(text: Optional[str]) -> Optional[Tuple[str, str]]:
+    """-> (relayed_callsign, relaying_callsign) for a relay-format message, else None."""
+    m = RELAY_RE.match(unmangle(text or ""))
+    if not m:
+        return None
+    return m.group(1).upper(), m.group(2).upper()
+
+
 # Consent token carried in VarMap position broadcasts: 'APRS:Y' = you may relay my
 # position to APRS, 'APRS:N' = you may not.  Absent = no statement (treated as no).
 APRS_CONSENT = re.compile(r"(?<![A-Z0-9])APRS\s*[:=]\s*([YN])(?![A-Z0-9])", re.I)

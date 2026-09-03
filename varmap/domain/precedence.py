@@ -25,6 +25,7 @@ SOURCE_RANK = {
     "aprs": 3,           # exact coordinates from an APRS packet (via Graywolf)
     "beacon": 2,
     "cq": 2,
+    "relayed": 2,        # exact coordinates but second-hand (relayed by another station)
     "broadcast_grid": 1,
 }
 DEFAULT_CROSS_RANK_MAX_AGE = timedelta(hours=6)
