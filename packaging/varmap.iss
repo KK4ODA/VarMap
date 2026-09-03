@@ -28,6 +28,8 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=VarMap
 LicenseFile=..\LICENSE
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 (2026-09-03)
+
+- Built-in update check (GitHub releases, every 12 h) with an Update pill; one-click self-update for the installed Windows build with SHA-256 verification; releases now ship SHA256SUMS.txt.
+
 ## 0.2.0 (2026-09-03)
 
 APRS integration via Graywolf, Position TX safeguards, UI polish.

@@ -83,6 +83,7 @@
   <span class="spacer"></span>
   <button id="btn-me" title="Centre the map on my own station">⌖ me</button>
   <button id="btn-fit" title="Zoom the map so every visible station fits">⛶ fit</button>
+  <button id="pill-update" class="pill warn hidden" title="A newer VarMap release is available. Click for details">Update</button>
   <button id="pill-beacon" class="pill off" title="Position TX: automatic broadcasting of my position through VarAC. Click to open the Position TX settings">POSITION TX OFF</button>
   <span id="pill-varac" class="pill warn" title="Whether VarMap can read VarAC's database and whether VarAC itself is running">VarAC …</span>
   <button id="btn-settings" title="Settings: VarAC paths, my position, position TX, offline maps, display">⚙</button>
@@ -337,7 +338,17 @@
         <label title="Upper limit on stored positions per station">Max positions / station <input type="number" data-cfg="history.max_positions_per_station"></label>
         <label title="Port of VarMap's web page. Change only if another program uses 5001. Takes effect after restart">Web port <input type="number" data-cfg="web.port"></label>
         <label title="Open the VarMap page in your browser automatically when VarMap starts"><input type="checkbox" data-cfg="web.open_browser"> Open browser on start</label>
+        <label title="Ask GitHub for the latest VarMap release at start-up and every few hours. Only the version number is fetched; nothing about you is sent"><input type="checkbox" data-cfg="updates.check"> Check for updates automatically</label>
+        <label title="Hours between automatic update checks">Check every (h) <input type="number" min="1" data-cfg="updates.interval_hours"></label>
       </div>
+      <h4>Updates</h4>
+      <div class="row">
+        <button id="btn-update-check" title="Ask GitHub for the latest release now">Check now</button>
+        <button id="btn-update-apply" class="primary hidden" title="Download the new installer, verify it, close VarMap, install and reopen. Your settings and database are kept">Install update</button>
+        <button id="btn-update-skip" class="hidden" title="Stop reminding me about this particular version">Skip this version</button>
+        <a id="lnk-update" class="hidden" target="_blank" rel="noopener">Release notes and downloads</a>
+      </div>
+      <div id="update-status" class="info" title="Update check state"></div>
       <div class="legend" title="Marker colours by position age">
         <span><i class="dot fresh"></i> fresh</span><span><i class="dot recent"></i> recent</span>
         <span><i class="dot stale"></i> stale</span><span><i class="dot old"></i> old</span>

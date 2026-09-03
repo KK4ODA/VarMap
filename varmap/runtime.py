@@ -17,6 +17,7 @@ from .services.graywolf_tx import GraywolfTx
 from .services.own_position import OwnPositionTracker
 from .services.poller import Poller
 from .services.tiles import RegionDownloader, TileFetcher, TileStore
+from .services.updater import Updater
 from .storage.repository import Repository
 
 log = logging.getLogger("varmap")
@@ -56,6 +57,7 @@ class Runtime:
         self.graywolf_tx = GraywolfTx(self)
         self.tracker = OwnPositionTracker(self)
         self.beacon = BeaconService(self)
+        self.updater = Updater(self)
         self._data_version = 0
         self._lock = threading.Lock()
         self.started = False
@@ -71,6 +73,7 @@ class Runtime:
         self.graywolf_tx.start()
         self.tracker.start()
         self.beacon.start()
+        self.updater.start()
         log.info("VarMap %s runtime started; data dir %s", __version__, self.cfg.data_dir())
 
     def stop(self) -> None:
@@ -79,6 +82,7 @@ class Runtime:
         self.graywolf_tx.stop()
         self.tracker.stop()
         self.beacon.stop()
+        self.updater.stop()
 
     def on_new_data(self, n: int) -> None:
         with self._lock:
@@ -112,6 +116,7 @@ class Runtime:
             "poller": safe(self.poller.snapshot, {"status": "error", "connected": False}),
             "graywolf": safe(self.graywolf.snapshot, {"enabled": False, "connected": False}),
             "graywolf_tx": safe(self.graywolf_tx.snapshot, {}),
+            "updates": safe(self.updater.snapshot, {"current": __version__, "available": False}),
             "own": safe(self.tracker.describe, {"fix": None}),
             "beacon": safe(self.beacon.snapshot, {"enabled": False}),
             "counts": safe(self.repo.counts, {}),

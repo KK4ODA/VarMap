@@ -112,6 +112,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "grid_dwell_seconds": 120, "grid_edge_margin_m": 300.0,
         },
     },
+    "updates": {"check": True, "interval_hours": 12, "skip_version": ""},
     "web": {"host": "127.0.0.1", "port": 5001, "open_browser": True},
     "privacy": {"share_own_position_externally": False},
 }

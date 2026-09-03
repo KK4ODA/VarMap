@@ -150,6 +150,24 @@ def create_app(rt) -> Flask:
         body = request.get_json(force=True, silent=True) or {}
         return jsonify(rt.beacon.relay_to_varac(st, (body.get("comment") or "")[:40]))
 
+    @app.route("/api/updates")
+    def api_updates():
+        return jsonify(rt.updater.snapshot())
+
+    @app.route("/api/updates/check", methods=["POST"])
+    def api_updates_check():
+        return jsonify(rt.updater.check())
+
+    @app.route("/api/updates/apply", methods=["POST"])
+    def api_updates_apply():
+        return jsonify(rt.updater.apply())
+
+    @app.route("/api/updates/skip", methods=["POST"])
+    def api_updates_skip():
+        body = request.get_json(force=True, silent=True) or {}
+        rt.updater.skip(body.get("version"))
+        return jsonify({"ok": True, "state": rt.updater.snapshot()})
+
     @app.route("/api/poll_now", methods=["POST"])
     def api_poll_now():
         rt.poller.wake()

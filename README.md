@@ -63,6 +63,22 @@ python -m varmap --dump-windows    :: list VarAC's controls (GUI automation)
 python -m pytest -q tests          :: unit + offline integration tests
 ```
 
+## Updating
+
+VarMap checks GitHub for a newer release at start-up and every 12 hours (only the
+version number is fetched; nothing about you is sent). When one exists an orange
+**Update** pill appears in the top bar:
+
+- **Installed Windows build**: click it and choose *Install now*. VarMap downloads
+  the new installer, verifies its size and SHA-256 checksum against the release's
+  `SHA256SUMS.txt`, closes, installs silently and reopens. Settings and the station
+  database live in `%LOCALAPPDATA%\VarMap` and are untouched.
+- **Portable zip, macOS, Linux, source**: the pill opens the release page; replace
+  the files (or `git pull`) yourself.
+
+Settings → Display has *Check for updates automatically*, *Check now* and *Skip this
+version*.
+
 ## Where positions come from
 
 | Source | Precision | Notes |

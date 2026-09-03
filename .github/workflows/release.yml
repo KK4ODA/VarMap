@@ -89,7 +89,8 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - run: ls -la artifacts
+      - name: Checksums
+        run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           name: VarMap ${{ github.ref_name }}
@@ -102,3 +103,5 @@ jobs:
             **macOS / Linux:** map-only builds (VarAC and transmit are Windows-only). Unpack the `.tar.gz`, run `./VarMap`, open http://127.0.0.1:5001.
 
             Settings and the station database are kept in the user profile (`%LOCALAPPDATA%\VarMap` on Windows) and survive upgrades.
+
+            **Already running VarMap?** It checks for new releases by itself; on the installed Windows build click the *Update* pill and choose *Install now*. `SHA256SUMS.txt` lists the checksums of every file above.

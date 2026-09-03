@@ -500,7 +500,36 @@
     else if (b.blocked) { bp.textContent = "POSITION TX BLOCKED"; bp.className = "pill warn"; bp.title = b.blocked; }
     else { const nd = b.next_due_seconds != null ? ` · next ${Math.max(0, Math.round(b.next_due_seconds))} s` : ""; bp.textContent = (b.dry_run ? "POSITION TX DRY-RUN" : "POSITION TX LIVE") + nd; bp.className = "pill " + (b.dry_run ? "dry" : "on"); bp.title = b.decision || ""; }
     $("st-clock").textContent = new Date(nowServer()).toISOString().slice(11, 19) + "z";
+    const up = h.updates || {};
+    const pu = $("pill-update");
+    if (up.available) { pu.textContent = `Update v${up.latest}`; pu.classList.remove("hidden"); pu.title = `VarMap ${up.latest} is available (you run ${up.current}). Click for details`; }
+    else pu.classList.add("hidden");
+    S.updates = up;
   }
+  function renderUpdateStatus(up) {
+    if (!up) return;
+    const lines = [`Running VarMap ${up.current} (${up.mode} build)`,
+      up.latest ? `Latest release: ${up.latest}${up.available ? " - UPDATE AVAILABLE" : (up.skipped === up.latest ? " (skipped)" : " - you are up to date")}` : "Latest release: not checked yet",
+      up.checked_at ? `Last check: ${ageStr(up.checked_at)} ago` : "", up.error ? `Last check failed: ${up.error}` : "",
+      up.applying ? `Update in progress: ${up.applying}` : ""].filter(Boolean);
+    $("update-status").textContent = lines.join("\n");
+    $("btn-update-apply").classList.toggle("hidden", !(up.available && up.can_self_update));
+    $("btn-update-skip").classList.toggle("hidden", !up.available);
+    const a = $("lnk-update"); a.href = up.url || "https://github.com/KK4ODA/VarMap/releases"; a.classList.toggle("hidden", !up.latest);
+  }
+  async function applyUpdate() {
+    const up = S.updates || {};
+    if (!up.available) return;
+    if (!up.can_self_update) { window.open(up.url || "https://github.com/KK4ODA/VarMap/releases", "_blank"); return; }
+    const notes = (up.notes || "").replace(/[#*`]/g, "").slice(0, 600);
+    if (!confirm(`Install VarMap ${up.latest} now?\n\nVarMap will download the installer, verify it, close, install and reopen. Your settings and station database are kept.\n\n${notes}`)) return;
+    const r = await api("/api/updates/apply", {});
+    alert(r.ok ? r.message : "Update failed: " + r.error);
+  }
+  $("pill-update").onclick = applyUpdate;
+  $("btn-update-apply").onclick = applyUpdate;
+  $("btn-update-check").onclick = async () => { $("update-status").textContent = "Checking…"; const up = await api("/api/updates/check", {}); S.updates = up; renderUpdateStatus(up); refreshHealth(); };
+  $("btn-update-skip").onclick = async () => { const r = await api("/api/updates/skip", { version: (S.updates || {}).latest }); S.updates = r.state; renderUpdateStatus(r.state); refreshHealth(); };
 
   async function refreshBroadcasts() {
     if (S.tab !== "broadcasts") return;
@@ -572,6 +601,7 @@
     $("varac-info").textContent = fmt(S.health.varac);
     $("own-info").textContent = fmt(S.health.own);
     $("graywolf-info").textContent = fmt(S.health.graywolf || {});
+    renderUpdateStatus(S.health.updates);
   }
   async function refreshAprsPane() {
     if (modal.classList.contains("hidden")) return;
