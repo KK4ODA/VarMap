@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VarMap</title>
+<link rel="stylesheet" href="/static/vendor/leaflet.css">
+<link rel="stylesheet" href="/static/vendor/MarkerCluster.css">
+<link rel="stylesheet" href="/static/vendor/MarkerCluster.Default.css">
+<link rel="stylesheet" href="/static/app.css?v={{ v }}">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand" title="VarMap: maps the VarAC stations you hear and can broadcast your own position through VarAC">VarMap</div>
+  <input id="search" type="search" placeholder="Search callsign / grid / QTH" autocomplete="off" title="Type part of a callsign, grid square, name or QTH to filter the map and the list">
+  <details class="dd" id="dd-filters" title="Filters that apply to the map and the station list together"><summary>Filters <span id="f-badge" class="badge hidden"></span><span class="caret"></span></summary>
+    <div class="dd-body filters">
+      <label class="fl" title="The main filter: show stations heard (any frame, with or without a position) within this time, on the map and in the list. Older stations stay in the database and come back when you widen this">Show stations heard within
+        <select id="f-heard">
+          <option value="900">15 min</option><option value="3600">1 hour</option><option value="21600">6 hours</option>
+          <option value="86400">24 hours</option><option value="604800" selected>7 days</option><option value="2592000">30 days</option><option value="0">Any time</option>
+        </select></label>
+      <label class="fl" title="Optional extra: also drop stations whose last known POSITION is older than this, even if they were heard more recently without a locator. Normally leave at Never; marker colour already shows position age">Hide positions older than
+        <select id="f-age">
+          <option value="0" selected>Never</option><option value="3600">1 hour</option><option value="21600">6 hours</option>
+          <option value="86400">24 hours</option><option value="604800">7 days</option><option value="2592000">30 days</option>
+        </select></label>
+      <label class="fl" title="Only stations last heard on this band">Band
+        <select id="f-band"><option value="">All bands</option></select></label>
+      <label class="fl" title="Only stations within this distance of my own position. Needs my position to be known">Within distance
+        <select id="f-dist">
+          <option value="0" selected>Any distance</option><option value="50">50</option><option value="100">100</option>
+          <option value="250">250</option><option value="500">500</option><option value="1000">1000</option><option value="2000">2000</option>
+        </select></label>
+      <label class="fl" title="Only stations whose last signal report was at least this strong. VarAC beacons decode down to about -18 dB">Minimum SNR (dB)
+        <select id="f-snr">
+          <option value="" selected>Any SNR</option><option value="-15">-15 or better</option><option value="-10">-10 or better</option>
+          <option value="-5">-5 or better</option><option value="0">0 or better</option><option value="5">+5 or better</option><option value="10">+10 or better</option>
+        </select></label>
+      <label class="fl" title="Where the station's position came from. Beacons and CQs carry a grid square; broadcasts and VMails can carry exact GPS coordinates">Position source
+        <select id="f-src">
+          <option value="" selected>Any source</option><option value="beacon">Beacon or CQ (grid)</option>
+          <option value="broadcast">Broadcast text</option><option value="vmail">VMail GPS tag</option><option value="exact">Exact coordinates only</option>
+        </select></label>
+      <hr>
+      <button id="btn-clear-filters" title="Reset every filter in this menu and in Flags">Clear all filters</button>
+    </div>
+  </details>
+  <details class="dd" title="Station tags and display options"><summary>Flags <span id="g-badge" class="badge hidden"></span><span class="caret"></span></summary>
+    <div class="dd-body">
+      <label title="Only stations whose last beacon was an EmComm (emergency communications) beacon"><input type="checkbox" id="f-emcomm"> EmComm</label>
+      <label title="Only stations announcing a public BBS (bulletin board)"><input type="checkbox" id="f-bbs"> BBS</label>
+      <label title="Only stations announcing a public email gateway"><input type="checkbox" id="f-email"> Email gateway</label>
+      <label title="Only stations announcing a public AI gateway"><input type="checkbox" id="f-ai"> AI gateway</label>
+      <label title="Only stations whose last CQ carried the POTA (Parks On The Air) tag"><input type="checkbox" id="f-pota"> POTA</label>
+      <label title="Only stations you marked as favourites (star in the station panel)"><input type="checkbox" id="f-fav"> Favourites</label>
+      <hr>
+      <label title="Stations that were heard but never sent a grid locator (standard beacons) appear in the list but cannot be placed on the map"><input type="checkbox" id="f-unlocated" checked> Unlocated in list</label>
+      <label title="Include your own transmissions as logged by VarAC"><input type="checkbox" id="f-own" checked> Show own beacons</label>
+    </div>
+  </details>
+  <details class="dd" id="dd-map" title="How the map draws stations"><summary>Map <span class="caret"></span></summary>
+    <div class="dd-body filters">
+      <label class="fl" title="Grouping of stations that sit close together at the current zoom. Off never groups; Overlapping only groups stations whose dots would touch; Normal and Aggressive group wider areas for a cleaner continental view">Clustering
+        <select id="m-cluster">
+          <option value="off">Off (never group)</option><option value="overlap" selected>Only when overlapping</option>
+          <option value="normal">Normal</option><option value="aggressive">Aggressive</option>
+        </select></label>
+      <label class="fl" title="When to print the callsign next to each dot. 'By zoom' hides labels when zoomed far out">Callsign labels
+        <select id="m-labels">
+          <option value="zoom" selected>By zoom level</option><option value="always">Always</option><option value="never">Never</option>
+        </select></label>
+      <label class="fl" title="Size of the station dots and labels">Marker size
+        <select id="m-size">
+          <option value="normal" selected>Normal</option><option value="large">Large</option><option value="xlarge">Extra large</option>
+        </select></label>
+      <label title="When you point at a station, draw the grid square its position came from. A 6-character grid is about 4 x 8 km"><input type="checkbox" id="f-grid" checked> Grid squares on hover</label>
+      <label title="Draw a line through my own recorded positions from the last 24 hours"><input type="checkbox" id="m-owntrack"> Show my own track (24 h)</label>
+    </div>
+  </details>
+  <span class="spacer"></span>
+  <button id="btn-me" title="Centre the map on my own station">⌖ me</button>
+  <button id="btn-fit" title="Zoom the map so every visible station fits">⛶ fit</button>
+  <button id="pill-beacon" class="pill off" title="Position TX: automatic broadcasting of my position through VarAC. Click to open the Position TX settings">POSITION TX OFF</button>
+  <span id="pill-varac" class="pill warn" title="Whether VarMap can read VarAC's database and whether VarAC itself is running">VarAC …</span>
+  <button id="btn-settings" title="Settings: VarAC paths, my position, position TX, offline maps, display">⚙</button>
+</header>
+
+<main>
+  <div id="map" title=""></div>
+  <aside id="sidebar">
+    <div class="side-tabs">
+      <button class="side-tab active" data-tab="stations" title="Every station heard, newest first. Click a station for details">Stations <span id="count-shown"></span></button>
+      <button class="side-tab" data-tab="broadcasts" title="Recent broadcast messages received by VarAC">Broadcasts</button>
+      <select id="sort" title="Order of the station list">
+        <option value="heard">Last heard</option><option value="call">Callsign</option>
+        <option value="dist">Distance</option><option value="pos">Position age</option>
+      </select>
+    </div>
+    <div id="list" class="side-panel"></div>
+    <div id="broadcasts" class="side-panel hidden"></div>
+    <div id="detail" class="side-panel hidden"></div>
+  </aside>
+</main>
+
+<footer id="statusbar">
+  <span id="st-varac" title="VarAC database connection, last poll, frames stored, current VarAC frequency and database version">VarAC: …</span>
+  <span id="st-own" title="My own position and where it comes from (gps_log = VarAC's GPS file, manual_ini = VarAC ManualGPSData, my_locator = grid from VarAC.ini)">Own: …</span>
+  <span id="st-tiles" title="Map tiles: online + cache means new tiles are fetched and saved; cache only means fully offline">Tiles: …</span>
+  <span id="st-backfill" class="hidden" title="Reading VarAC's beacon history into VarMap's own database"></span>
+  <span class="spacer"></span>
+  <span id="st-clock" title="Current UTC time"></span>
+</footer>
+
+<div id="settings" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="tabs">
+        <button class="tab active" data-pane="varac" title="Where VarAC and its database are">VarAC</button>
+        <button class="tab" data-pane="position" title="Where VarMap gets my own position from">My position</button>
+        <button class="tab" data-pane="beacon" title="Broadcasting my position through VarAC">Position TX</button>
+        <button class="tab" data-pane="tiles" title="Downloading map areas for use without internet">Offline maps</button>
+        <button class="tab" data-pane="display" title="Units, colours and how long history is kept">Display</button>
+      </div>
+      <button id="btn-close-settings" title="Close settings (Esc)">✕</button>
+    </div>
+
+    <div class="pane active" data-pane="varac">
+      <h3>VarAC installation</h3>
+      <label title="Full path to VarAC.db. Leave blank and VarMap finds it next to VarAC.exe or via DBCustomFilePath in VarAC.ini">VarAC database (VarAC.db) <input data-cfg="varac.db_path" placeholder="blank = auto-discover (C:\VarAC\VarAC.db or DBCustomFilePath)"></label>
+      <label title="Full path to VarAC.exe. Only used to find the folder with VarAC.ini and VarAC.db. Blank = C:\VarAC\VarAC.exe">VarAC.exe <input data-cfg="varac.exe_path" placeholder="blank = C:\VarAC\VarAC.exe"></label>
+      <label title="If you start VarAC with a profile (for example VarAC_9700.ini), enter that file name so VarMap reads the same settings">Profile .ini <input data-cfg="varac.profile" placeholder="blank = VarAC.ini"></label>
+      <div class="row">
+        <button id="btn-test-db" title="Open the database above read-only and check it really is a VarAC database">Test database</button> <span id="test-db-result" class="muted"></span>
+      </div>
+      <div class="grid2">
+        <label title="How often VarMap looks for new beacons in VarAC's database. 10 seconds is plenty; beacons arrive every 15 minutes per station">Poll interval (s) <input type="number" min="2" data-cfg="varac.poll_interval_seconds"></label>
+        <label title="On the very first run, how much of VarAC's beacon history to load. 'Everything' takes under a minute and fills the map immediately">First-run backfill <select data-cfg="varac.backfill"><option value="all">Everything</option><option value="days:30">Last 30 days</option><option value="days:7">Last 7 days</option><option value="none">From now on</option></select></label>
+        <label title="CQ calls carry the same grid locator as beacons; map them too"><input type="checkbox" data-cfg="varac.read_cq_frames"> Map CQ frames too</label>
+        <label title="Look inside received broadcast messages for <GPS:...> tags, <LOC:grid> tags or a plain grid square"><input type="checkbox" data-cfg="varac.scan_broadcasts"> Positions from broadcasts</label>
+        <label title="Look inside received VMails for <GPS:...> tags (VarAC's own GPSLOC macro produces them). These are exact coordinates"><input type="checkbox" data-cfg="varac.scan_vmail_gps_tags"> &lt;GPS:&gt; tags from VMails</label>
+      </div>
+      <pre id="varac-info" class="info" title="What VarMap found in VarAC.ini"></pre>
+      <p class="muted">VarAC's database is opened strictly read-only. Nothing is ever written to it.</p>
+    </div>
+
+    <div class="pane" data-pane="position">
+      <h3>My position</h3>
+      <label title="Auto tries the sources from best to worst: VarAC's GPS log file, then your own NMEA GPS, then VarAC's ManualGPSData, then the MyLocator grid">Source
+        <select data-cfg="own_station.position_source">
+          <option value="auto">Auto (GPS log → NMEA → manual → MyLocator)</option>
+          <option value="gps_log">VarAC GPS log file</option>
+          <option value="nmea">Own NMEA GPS on a COM port</option>
+          <option value="manual_ini">VarAC ManualGPSData</option>
+          <option value="my_locator">VarAC MyLocator grid</option>
+        </select>
+      </label>
+      <label title="Normally taken from Mycall in VarAC.ini. Only fill this in if you want VarMap to use a different callsign">Own callsign override <input data-cfg="own_station.callsign" placeholder="blank = Mycall from VarAC.ini"></label>
+      <label title="Path of the file VarAC writes when 'Write GPS data to file' is on. Blank = the path from VarAC.ini">GPS log path <input data-cfg="own_station.gps_log_path" placeholder="blank = [GPS] WriteGPSDataToFileName from VarAC.ini"></label>
+      <div class="grid2">
+        <label title="Only for a second GPS receiver. A COM port cannot be shared: never enter the port VarAC is using">NMEA COM port <input data-cfg="own_station.nmea_com_port" placeholder="e.g. COM21 (leave blank if VarAC owns the GPS)"></label>
+        <label title="Speed of the NMEA COM port, usually 4800 or 9600">NMEA baud <input type="number" data-cfg="own_station.nmea_baud"></label>
+        <label title="How often VarMap refreshes my position">Update every (s) <input type="number" min="1" data-cfg="own_station.update_interval_seconds"></label>
+        <label title="How often my own track is saved to the database even when standing still">Record track at least every (s) <input type="number" min="5" data-cfg="own_station.record_interval_seconds"></label>
+      </div>
+      <p class="muted">To get a live feed from VarAC's own GPS, enable <b>Write GPS data to file</b> in VarAC's GPS settings. VarMap tails that file and never opens VarAC's COM port.</p>
+      <pre id="own-info" class="info" title="Diagnostics for my position source"></pre>
+    </div>
+
+    <div class="pane" data-pane="beacon">
+      <h3>Position TX: broadcasting my position through VarAC</h3>
+      <p class="muted">This sends a VarAC <b>broadcast</b> message containing your coordinates. It is separate from VarAC's own beacon, which carries only your grid square on VarAC's timer.</p>
+      <div class="row beacon-controls">
+        <button id="btn-beacon-on" class="primary" title="Arms the automatic scheduler. The first position broadcast goes out one interval from now, then according to the mode below, until you press Stop">Start auto position TX</button>
+        <button id="btn-beacon-off" class="danger" title="Kill switch: stops all automatic position broadcasts immediately">Stop auto position TX</button>
+        <button id="btn-send-now" title="One manual position broadcast right now (respects the 5-minute spacing and the hourly limit). Does not start the scheduler">Send position once now</button>
+        <label class="inline" title="Rehearsal mode: VarMap decides and logs exactly as if it were transmitting, but never touches VarAC. Leave on until you are happy with the timing"><input type="checkbox" data-cfg="beacon.dry_run"> Dry run (log only, never transmit)</label>
+      </div>
+      <div id="beacon-status" class="info" title="Live status of the scheduler"></div>
+      <div class="grid2">
+        <label title="Fixed: every N seconds. Smart timing: adapts to how fast you move and to turns, like APRS SmartBeaconing">Timing <select data-cfg="beacon.mode"><option value="fixed">Fixed interval</option><option value="smart">Smart timing</option></select></label>
+        <label title="Broadcast sends a text message with exact coordinates through VarAC's Broadcast window (recommended). The VarAC beacon option right-clicks VarAC's own beacon button instead: grid square only, experimental">Method <select data-cfg="beacon.method"><option value="broadcast">VarAC broadcast (exact lat/lon)</option><option value="beacon">One-time VarAC beacon (grid only, experimental)</option></select></label>
+        <label title="Recipient of the broadcast. ALL is public; a callsign sends it to that station only">Broadcast to <input data-cfg="beacon.broadcast_to"></label>
+        <label title="Digits after the decimal point in the transmitted coordinates. 5 = about 1 metre, 3 = about 100 m, 2 = about 1 km. Fewer digits = more privacy">Coordinate decimals <input type="number" min="0" max="7" data-cfg="beacon.coord_decimals"></label>
+        <label title="The text that is transmitted. Placeholders in braces are filled in; see the list below">Message template <input data-cfg="beacon.message_template"></label>
+        <label title="Free text inserted where the template says {comment}">Comment <input data-cfg="beacon.comment"></label>
+        <label title="Never transmit a position older than this. Protects against broadcasting a stale fix after the GPS stops">Max fix age (s) <input type="number" min="10" data-cfg="beacon.max_fix_age_seconds"></label>
+        <label title="Safety cap on transmissions per hour, counting manual ones. Default 2; cannot be set above 6">Max transmissions / hour <input type="number" min="1" max="6" data-cfg="beacon.max_per_hour"></label>
+        <label title="VarAC normally holds a broadcast until the frequency is clear (DCD). If VarAC's 'Ignore DCD' box is ticked that protection is off, so with this guard on VarMap refuses to hand VarAC a position broadcast until the box is unticked. Switch off only if persistent noise keeps VarAC's BUSY light on and you accept the risk of transmitting over someone"><input type="checkbox" data-cfg="beacon.dcd_guard"> DCD guard: do not send while VarAC ignores DCD</label>
+      </div>
+      <p class="muted">Placeholders: {gpstag} {lat} {lon} {grid} {call} {speed_kmh} {speed_mph} {course} {alt} {comment} {time}. VarAC broadcasts are limited to 150 bytes. Preview: <code id="beacon-preview" title="Exactly what would be transmitted right now">…</code></p>
+      <h4>Fixed interval</h4>
+      <div class="grid2">
+        <label title="Seconds between automatic position broadcasts. Default 1800 (30 minutes); minimum 300. With 'Only if moved' a parked station sends only the keepalive">Interval (s) <input type="number" min="300" step="60" data-cfg="beacon.fixed.interval_seconds"></label>
+        <label title="Recommended. Skip the broadcast when you have not moved since the last one; a keepalive still goes out occasionally (see below). Switching this off makes a parked station repeat the same position every interval"><input type="checkbox" data-cfg="beacon.fixed.only_if_moved"> Only if moved</label>
+        <label title="How far you must have moved for a broadcast to be worth sending. Minimum 100 m">Minimum move (m) <input type="number" min="100" data-cfg="beacon.fixed.min_move_m"></label>
+        <label title="When you are not moving, one broadcast is still sent this often so others know you are on the air. Minimum 1800 (30 minutes)">Keepalive when unmoved (s) <input type="number" min="1800" step="300" data-cfg="beacon.fixed.max_interval_seconds"></label>
+      </div>
+      <h4>Smart timing</h4>
+      <p class="muted" title="VarAC's calling frequencies come from VarAC_frequencies.conf">Smart timing is <b>not allowed on VarAC's calling frequencies</b> (14.105, 7.105, 3.595 and the rest of VarAC's standard list): it is meant for a tracker frequency you have QSY'd to. On a calling frequency use Fixed interval. VarMap checks VarAC's current frequency and blocks smart timing there automatically.</p>
+      <div class="grid3">
+        <label title="Fills the smart timing fields with a proven set. HF follows VARA HF / HF APRS tracker practice: about every 10 minutes while moving, hourly when parked. VHF is for VARA FM on 2 m / 70 cm where 5-minute spacing is acceptable">Profile
+          <select id="smart-profile" data-cfg="beacon.smart.profile"><option value="hf">HF (recommended)</option><option value="vhf">VHF / UHF (VARA FM)</option><option value="custom">Custom</option></select></label>
+        <label title="Never two broadcasts closer than this, whatever happens. Minimum 300">Min interval (s) <input type="number" min="300" step="60" data-cfg="beacon.smart.min_interval_seconds"></label>
+        <label title="Longest silence allowed while stationary; a keepalive broadcast goes out at this age. Minimum 1800">Max interval / keepalive (s) <input type="number" min="1800" step="300" data-cfg="beacon.smart.max_interval_seconds"></label>
+        <label title="Ignore movement smaller than this (GPS wander). Minimum 100">Min move (m) <input type="number" min="100" data-cfg="beacon.smart.min_move_m"></label>
+        <label title="At or below this speed you count as stationary and the slow rate applies">Slow speed (km/h) <input type="number" data-cfg="beacon.smart.slow_speed_kmh"></label>
+        <label title="Broadcast spacing when stationary or very slow. Minimum 1800">Slow rate (s) <input type="number" min="1800" step="300" data-cfg="beacon.smart.slow_rate_seconds"></label>
+        <label title="At or above this speed the fast rate applies; in between the rate scales with speed">Fast speed (km/h) <input type="number" data-cfg="beacon.smart.fast_speed_kmh"></label>
+        <label title="Broadcast spacing at fast speed. Minimum 300">Fast rate (s) <input type="number" min="300" step="60" data-cfg="beacon.smart.fast_rate_seconds"></label>
+        <label title="A change of heading larger than this can trigger a broadcast (corner pegging). Needs speed and course from the GPS">Turn min (°) <input type="number" data-cfg="beacon.smart.turn_min_deg"></label>
+        <label title="Makes the turn threshold larger at low speed: threshold = turn min + slope / speed">Turn slope <input type="number" data-cfg="beacon.smart.turn_slope"></label>
+        <label title="A turn cannot trigger a broadcast sooner than this after the previous one. Minimum 300">Min turn time (s) <input type="number" min="300" data-cfg="beacon.smart.min_turn_time_seconds"></label>
+        <label title="Send a broadcast when you enter a new 6-character grid square (after a short dwell so a wobble at the boundary does not trigger it)"><input type="checkbox" data-cfg="beacon.smart.grid_change_triggers"> Grid change triggers</label>
+        <label title="How long you must stay in the new grid square before it counts as a change">Grid dwell (s) <input type="number" data-cfg="beacon.smart.grid_dwell_seconds"></label>
+      </div>
+      <p class="muted warn-text">You, the licensee, are responsible for every transmission this software initiates. Position TX is OFF by default and starts in dry-run mode. A broadcast discloses your exact coordinates on HF; reduce the decimals for a coarser position. Built-in limits that no setting can override: at least 5 minutes between transmissions, a stationary station repeats itself at most every 30 minutes, at most 6 transmissions per hour (default 2) and 48 per day, and no smart timing on VarAC's calling frequencies.</p>
+      <h4>Diagnostics</h4>
+      <div class="row">
+        <button id="btn-rehearse" title="Opens VarAC's broadcast window, fills it in, reads VarAC's byte counter to confirm the text arrived, then closes the window. Nothing is transmitted">Test VarAC dialog (no TX)</button>
+        <span class="muted">Opens VarAC's broadcast window, fills it, checks VarAC's byte counter, then closes it without sending. Run after a VarAC update.</span>
+      </div>
+      <h4>Position TX log</h4>
+      <div id="beacon-log" class="log" title="Every position broadcast VarMap requested: time, why it was triggered, whether it was a dry run, and the message"></div>
+    </div>
+
+    <div class="pane" data-pane="tiles">
+      <h3>Offline maps</h3>
+      <label title="Where map images come from. {z}/{x}/{y} are filled in by VarMap. The default is OpenStreetMap">Tile source URL <input data-cfg="tiles.source_url"></label>
+      <div class="grid2">
+        <label title="While you have internet, fetch map images as you browse and keep them, so the same areas work offline later. Switch off to use only what is already cached"><input type="checkbox" data-cfg="tiles.online_fetch"> Fetch and cache tiles while online</label>
+        <label title="Deepest zoom level the map allows. Higher levels mean many more tiles to store">Max zoom <input type="number" min="1" max="19" data-cfg="tiles.max_zoom"></label>
+        <label title="Safety limit on the size of one region download. OpenStreetMap asks that bulk downloads stay modest">Download limit (tiles / job) <input type="number" data-cfg="tiles.download_max_tiles"></label>
+        <label title="How many tiles to fetch at the same time during a region download. Keep it at 2 for OpenStreetMap">Concurrency <input type="number" min="1" max="4" data-cfg="tiles.download_concurrency"></label>
+      </div>
+      <h4>Download a region</h4>
+      <div class="grid2">
+        <label title="A name for this download, so you can recognise it in the list">Name <input id="rg-name" value="My area"></label>
+        <label>&nbsp;<button id="btn-use-view" title="Fill in the box below with the area currently shown on the map">Use current map view</button></label>
+        <label title="Southern edge of the area, in decimal degrees">South <input id="rg-south" type="number" step="any"></label>
+        <label title="Northern edge of the area, in decimal degrees">North <input id="rg-north" type="number" step="any"></label>
+        <label title="Western edge of the area, in decimal degrees (negative in the Americas)">West <input id="rg-west" type="number" step="any"></label>
+        <label title="Eastern edge of the area, in decimal degrees (negative in the Americas)">East <input id="rg-east" type="number" step="any"></label>
+        <label title="Most zoomed-out level to download. 5 shows a whole region">Min zoom <input id="rg-zmin" type="number" min="0" max="19" value="5"></label>
+        <label title="Most zoomed-in level to download. Each extra level roughly quadruples the number of tiles; 12 shows towns, 14 shows streets">Max zoom <input id="rg-zmax" type="number" min="0" max="19" value="12"></label>
+      </div>
+      <div class="row">
+        <button id="btn-estimate" title="Count the tiles and estimate the download size before starting">Estimate</button>
+        <button id="btn-download" class="primary" title="Start downloading the area above into the offline cache">Download</button>
+        <button id="btn-cancel-dl" class="danger" title="Stop the running download; tiles already fetched are kept">Cancel</button>
+        <span id="rg-estimate" class="muted"></span>
+      </div>
+      <div class="progress" title="Download progress"><div id="dl-bar"></div></div>
+      <div id="dl-status" class="muted"></div>
+      <p class="muted">Every tile you view is cached too, so browsing an area while online makes it available offline. OpenStreetMap's tile policy discourages bulk downloads: keep regions modest (a few thousand tiles), or point the source URL at a provider that permits it.</p>
+      <h4>Cached tiles</h4>
+      <div id="tiles-stats" class="info" title="What is in the offline cache"></div>
+      <div id="regions" class="log" title="Regions you downloaded. Remove forgets the region and can also delete its tiles"></div>
+    </div>
+
+    <div class="pane" data-pane="display">
+      <h3>Display</h3>
+      <div class="grid2">
+        <label title="Distance units for the list and station panel. 'Same as VarAC' follows VarAC's LocatorsDistanceUnit setting">Units <select data-cfg="map.units"><option value="auto">Same as VarAC</option><option value="MI">Miles</option><option value="KM">Kilometres</option></select></label>
+        <label title="Zoom level used when the map has no remembered view yet">Default zoom <input type="number" min="1" max="18" data-cfg="map.default_zoom"></label>
+        <label title="A position younger than this is drawn as fresh (solid, strong colour)">Fresh (min) <input type="number" data-cfg="staleness.fresh_minutes"></label>
+        <label title="A position younger than this is drawn as recent">Recent (h) <input type="number" data-cfg="staleness.recent_hours"></label>
+        <label title="A position younger than this is drawn as stale (half-filled)">Stale (h) <input type="number" data-cfg="staleness.stale_hours"></label>
+        <label title="Positions older than this are drawn hollow and hidden by the default age filter">Hide after (d) <input type="number" data-cfg="staleness.hide_after_days"></label>
+        <label title="Position history and heard events older than this are deleted. Each station's latest position is always kept">History keep (d) <input type="number" data-cfg="history.keep_days"></label>
+        <label title="Upper limit on stored positions per station">Max positions / station <input type="number" data-cfg="history.max_positions_per_station"></label>
+        <label title="Port of VarMap's web page. Change only if another program uses 5001. Takes effect after restart">Web port <input type="number" data-cfg="web.port"></label>
+        <label title="Open the VarMap page in your browser automatically when VarMap starts"><input type="checkbox" data-cfg="web.open_browser"> Open browser on start</label>
+      </div>
+      <div class="legend" title="Marker colours by position age">
+        <span><i class="dot fresh"></i> fresh</span><span><i class="dot recent"></i> recent</span>
+        <span><i class="dot stale"></i> stale</span><span><i class="dot old"></i> old</span>
+        <span><i class="dot own"></i> my station</span>
+      </div>
+    </div>
+
+    <div class="modal-foot">
+      <span id="save-result" class="muted"></span>
+      <span class="spacer"></span>
+      <button id="btn-save" class="primary" title="Save all settings on every tab. Most take effect immediately; the web port needs a restart">Save settings</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/vendor/leaflet.js"></script>
+<script src="/static/vendor/leaflet.markercluster.js"></script>
+<script src="/static/app.js?v={{ v }}"></script>
+</body>
+</html>

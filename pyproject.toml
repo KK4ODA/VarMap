@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "varmap"
+version = "0.1.0"
+description = "VarAC companion: maps the stations you hear and broadcasts your own GPS position through VarAC"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "KK4ODA" }]
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0",
+    "waitress>=3.0",
+    "pyserial>=3.5",
+    "pywin32>=306; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyinstaller>=6.0"]
+
+[project.scripts]
+varmap = "varmap.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/KK4ODA/VarMap"
+Releases = "https://github.com/KK4ODA/VarMap/releases"
+Issues = "https://github.com/KK4ODA/VarMap/issues"
+
+[tool.setuptools.packages.find]
+include = ["varmap*"]
+
+[tool.setuptools.package-data]
+varmap = ["web/static/*", "web/static/vendor/*", "web/templates/*", "storage/*.sql"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

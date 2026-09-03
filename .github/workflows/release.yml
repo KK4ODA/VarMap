@@ -1,0 +1,104 @@
+name: Release
+
+# Push a tag like v0.2.0 (release.bat does this) and this workflow builds
+# packages for every platform and publishes them on the Releases page.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: macos-13
+            name: macos-x64
+          - os: ubuntu-22.04
+            name: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Version from tag
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "VER=$VER" >> "$GITHUB_ENV"
+          PYVER=$(python -c "import re;print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', open('varmap/__init__.py').read()).group(1))")
+          if [ "$PYVER" != "$VER" ]; then echo "::error::tag v$VER does not match varmap/__init__.py version $PYVER (use release.bat)"; exit 1; fi
+      - run: python -m pip install -r requirements.txt pyinstaller
+      - run: python -m pytest -q tests
+
+      # ---- Windows: one-folder build -> installer (Inno Setup) + portable zip
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean packaging/varmap.spec
+          Copy-Item README.md, LICENSE dist/VarMap/
+          Compress-Archive -Path dist/VarMap/* -DestinationPath "dist/VarMap-$env:VER-windows-x64-portable.zip"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=$env:VER packaging\varmap.iss
+          Get-ChildItem dist
+
+      # ---- macOS / Linux: single executable
+      - name: Build (macOS / Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          VARMAP_ONEFILE=1 python -m PyInstaller --noconfirm --clean packaging/varmap.spec
+          mkdir -p "dist/VarMap-$VER-${{ matrix.name }}"
+          cp dist/VarMap README.md LICENSE "dist/VarMap-$VER-${{ matrix.name }}/"
+          cat > "dist/VarMap-$VER-${{ matrix.name }}/README-FIRST.txt" <<EOF
+          VarMap $VER (${{ matrix.name }})
+          Run ./VarMap from a terminal, then open http://127.0.0.1:5001 in a browser.
+          macOS: the binary is not code-signed; on first run use right-click > Open, or run
+                 xattr -d com.apple.quarantine VarMap
+          VarAC itself runs on Windows. On this platform VarMap can map a VarAC database it can
+          read (for example VarAC under Wine, or a shared/copied VarAC.db); transmitting through
+          VarAC's window is Windows-only.
+          EOF
+          cd dist && tar -czf "VarMap-$VER-${{ matrix.name }}.tar.gz" "VarMap-$VER-${{ matrix.name }}" && ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.zip
+            dist/*.exe
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - run: ls -la artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: VarMap ${{ github.ref_name }}
+          generate_release_notes: true
+          files: artifacts/*
+          body: |
+            **Windows (VarAC users):** download `VarMap-Setup-*.exe` and run it (per-user install, no admin needed).
+            Prefer no installer? `VarMap-*-windows-x64-portable.zip` unzips anywhere; run `VarMap.exe`.
+
+            **macOS / Linux:** map-only builds (VarAC and transmit are Windows-only). Unpack the `.tar.gz`, run `./VarMap`, open http://127.0.0.1:5001.
+
+            Settings and the station database are kept in the user profile (`%LOCALAPPDATA%\VarMap` on Windows) and survive upgrades.
