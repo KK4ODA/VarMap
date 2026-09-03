@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-03)
+
+APRS integration via Graywolf, Position TX safeguards, UI polish.
 
 - APRS via Graywolf: stations heard by Graywolf on the map (diamond markers), own position from Graywolf's GPS, APRS settings tab with connection test.
 - APRS transmit through Graywolf (off, dry run by default): mirror own position broadcasts as an APRS beacon; relay consenting VarAC stations (APRS:Y token) as APRS objects with ambiguity, rate limits, consent expiry and retirement; relay an APRS station's position to VarAC from the station panel.
