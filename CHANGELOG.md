@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4 (2026-09-03)
+
+- Preferred bands for Position TX: automatic broadcasts hold until VarAC's scanner is on a chosen band; manual sends (position and relay) are queued for it, with a maximum wait and a Cancel button. Status shows VarAC's current band.
+
 ## 0.3.3 (2026-09-03)
 
 - Manual sends (Send position once now, Relay to VarAC) need only 60 s since the previous VarAC transmission; the 5-minute floor now applies to the automatic scheduler only. APRS object transmissions no longer count toward VarAC spacing. Hourly and daily limits unchanged.

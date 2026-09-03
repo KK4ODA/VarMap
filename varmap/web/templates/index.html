@@ -179,7 +179,8 @@
       <div class="row beacon-controls">
         <button id="btn-beacon-on" class="primary" title="Arms the automatic scheduler. The first position broadcast goes out one interval from now, then according to the mode below, until you press Stop">Start auto position TX</button>
         <button id="btn-beacon-off" class="danger" title="Kill switch: stops all automatic position broadcasts immediately">Stop auto position TX</button>
-        <button id="btn-send-now" title="One manual position broadcast right now. Manual sends need only 60 s since the previous VarAC transmission and count against the hourly limit. Does not start the scheduler">Send position once now</button>
+        <button id="btn-send-now" title="One manual position broadcast right now (or as soon as VarAC is on a preferred band). Manual sends need only 60 s since the previous VarAC transmission and count against the hourly limit. Does not start the scheduler">Send position once now</button>
+        <button id="btn-cancel-pending" class="hidden" title="Forget the manual send that is waiting for a preferred band">Cancel queued send</button>
         <label class="inline" title="Rehearsal mode: VarMap decides and logs exactly as if it were transmitting, but never touches VarAC. Leave on until you are happy with the timing"><input type="checkbox" data-cfg="beacon.dry_run"> Dry run (log only, never transmit)</label>
       </div>
       <div id="beacon-status" class="info" title="Live status of the scheduler"></div>
@@ -192,6 +193,8 @@
         <label title="Free text inserted where the template says {comment}">Comment <input data-cfg="beacon.comment"></label>
         <label title="Never transmit a position older than this. Protects against broadcasting a stale fix after the GPS stops">Max fix age (s) <input type="number" min="10" data-cfg="beacon.max_fix_age_seconds"></label>
         <label title="Safety cap on transmissions per hour, counting manual ones. Default 2; cannot be set above 6">Max transmissions / hour <input type="number" min="1" max="6" data-cfg="beacon.max_per_hour"></label>
+        <label title="With VarAC's scanner hopping between bands, a broadcast would go out on whatever band VarAC is on at that moment. List the bands you want here (e.g. 40m, 20m) and VarMap holds every broadcast, automatic or manual, until VarAC is on one of them. Blank = any band">Preferred bands <input data-cfg="beacon.preferred_bands" placeholder="blank = any band, e.g. 40m, 20m"></label>
+        <label title="A manual send waiting for a preferred band gives up after this long">Max wait for a manual send (s) <input type="number" min="60" step="60" data-cfg="beacon.band_wait_max_seconds"></label>
         <label title="Adds the token APRS:Y to your position broadcasts. It tells other VarMap users they may relay your position to the APRS network (aprs.fi and RF) as an object under their callsign. Untick to send APRS:N, which withdraws consent. Nothing is relayed for stations that never said APRS:Y"><input type="checkbox" data-cfg="beacon.aprs_consent"> Allow others to relay my position to APRS (adds APRS:Y)</label>
         <label title="VarAC normally holds a broadcast until the frequency is clear (DCD). If VarAC's 'Ignore DCD' box is ticked that protection is off, so with this guard on VarMap refuses to hand VarAC a position broadcast until the box is unticked. Switch off only if persistent noise keeps VarAC's BUSY light on and you accept the risk of transmitting over someone"><input type="checkbox" data-cfg="beacon.dcd_guard"> DCD guard: do not send while VarAC ignores DCD</label>
       </div>

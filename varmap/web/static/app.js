@@ -416,7 +416,7 @@
       const dry = S.config && S.config.beacon && S.config.beacon.dry_run;
       if (!dry && !confirm(`Broadcast ${d.callsign}'s APRS position on VarAC now, under your callsign?`)) return;
       const r = await api(`/api/station/${encodeURIComponent(d.callsign)}/relay_to_varac`, {});
-      alert(r.ok ? (r.dry_run ? "Dry run logged: " : "Sent on VarAC: ") + r.message : "Not sent: " + r.error);
+      alert(r.ok ? (r.queued ? `Queued: ${r.waiting_for}. It goes out as soon as VarAC lands there.` : (r.dry_run ? "Dry run logged: " : "Sent on VarAC: ") + r.message) : "Not sent: " + r.error);
     };
   }
   async function showTrack(cs) {
@@ -498,7 +498,7 @@
     const b = h.beacon; const bp = $("pill-beacon");
     if (!b.enabled) { bp.textContent = "POSITION TX OFF"; bp.className = "pill off"; }
     else if (b.blocked) { bp.textContent = "POSITION TX BLOCKED"; bp.className = "pill warn"; bp.title = b.blocked; }
-    else { const nd = b.next_due_seconds != null ? ` · next ${Math.max(0, Math.round(b.next_due_seconds))} s` : ""; bp.textContent = (b.dry_run ? "POSITION TX DRY-RUN" : "POSITION TX LIVE") + nd; bp.className = "pill " + (b.dry_run ? "dry" : "on"); bp.title = b.decision || ""; }
+    else { const nd = b.holding_for_band ? ` · holding for ${(b.preferred_bands || []).join("/")}` : (b.next_due_seconds != null ? ` · next ${Math.max(0, Math.round(b.next_due_seconds))} s` : ""); bp.textContent = (b.dry_run ? "POSITION TX DRY-RUN" : "POSITION TX LIVE") + nd; bp.className = "pill " + (b.dry_run ? "dry" : "on"); bp.title = b.decision || ""; }
     $("st-clock").textContent = new Date(nowServer()).toISOString().slice(11, 19) + "z";
     const up = h.updates || {};
     const pu = $("pill-update");
@@ -639,13 +639,15 @@
     let b; try { b = await api("/api/beacon"); } catch (e) { return; }
     const lines = [`Auto position TX: ${b.enabled ? (b.dry_run ? "RUNNING (dry run)" : "RUNNING - LIVE") : "stopped"}`,
       `Mode: ${b.mode} · method: ${b.method}`, `Decision: ${b.blocked ? "blocked - " + b.blocked : b.decision || "—"}${b.next_due_seconds != null ? ` · next possible in ${Math.round(b.next_due_seconds)} s` : ""}`,
-      `VarAC frequency: ${b.current_frequency_hz ? fmtFreq(b.current_frequency_hz) + " Hz" : "unknown"}${b.on_calling_frequency_hz ? " - a CALLING FREQUENCY (smart timing blocked here)" : ""}`,
+      `VarAC frequency: ${b.current_frequency_hz ? fmtFreq(b.current_frequency_hz) + " Hz" : "unknown"} (${b.current_band || "band ?"})${b.on_calling_frequency_hz ? " - a CALLING FREQUENCY (smart timing blocked here)" : ""}${(b.preferred_bands || []).length ? " · preferred: " + b.preferred_bands.join(", ") : ""}${b.holding_for_band ? "\nHOLDING: " + b.holding_for_band : ""}`,
+      b.pending ? `Queued manual send (${b.pending.kind}): ${b.pending.waiting_for}; gives up ${ageStr(b.pending.expires_at) === "0s" ? "now" : "at " + (b.pending.expires_at || "").slice(11, 19) + "z"}` : "",
       `VarAC activity: ${b.varac_activity ? (b.varac_activity.busy === true ? "BUSY - " + b.varac_activity.reason : b.varac_activity.busy === false ? "free (not connected, Broadcast window closed)" : b.varac_activity.reason || "unknown") : "not checked yet"}`,
       `VarAC Ignore DCD box: ${b.ignore_dcd === true ? "TICKED - busy-channel protection OFF" : b.ignore_dcd === false ? "not ticked (VarAC waits for a clear channel)" : "unknown (VarAC not running or not checked yet)"}`,
       `Transmissions last hour: ${b.tx_last_hour} (limit ${b.effective ? b.effective.max_per_hour : "?"}/h, ${b.limits ? b.limits.max_per_day : "?"}/day)`,
       b.effective ? `Effective timing after built-in limits: fixed ${b.effective.fixed.interval_seconds} s${b.effective.fixed.only_if_moved ? " only if moved, keepalive " + b.effective.fixed.max_interval_seconds + " s" : ""} · smart min ${b.effective.smart.min_interval_seconds} s / keepalive ${b.effective.smart.max_interval_seconds} s` : "",
       b.last_tx ? `Last: ${b.last_tx.requested_at} ${b.last_tx.trigger} ${b.last_tx.ok ? "OK" : "FAILED " + (b.last_tx.error || "")}${b.last_tx.dry_run ? " (dry)" : ""}` : "Last: —"];
-    $("beacon-status").textContent = lines.join("\n");
+    $("beacon-status").textContent = lines.filter(Boolean).join("\n");
+    $("btn-cancel-pending").classList.toggle("hidden", !b.pending);
     $("beacon-preview").textContent = b.preview && b.preview.ok ? `${b.preview.message}  (${b.preview.length}/${b.preview.max})` : (b.preview && b.preview.error) || "";
     $("beacon-log").innerHTML = (b.recent || []).map((r) => `<div class="r ${r.ok ? "" : "bad"} ${r.dry_run ? "dry" : ""}"><span>${esc((r.requested_at || "").slice(0, 19).replace("T", " "))}</span><span>${esc(r.trigger)}</span><span>${r.dry_run ? "dry-run" : r.ok ? "SENT" : "FAILED"}${r.frequency_hz ? "<br>" + fmtFreq(r.frequency_hz) : ""}</span><span>${esc(r.message || "")} ${esc(r.error || "")}</span></div>`).join("") || '<div class="muted" style="padding:6px">No transmissions logged.</div>';
   }
@@ -683,8 +685,11 @@
   };
   $("btn-send-now").onclick = async () => {
     await api("/api/config", collectConfig());
-    const r = await api("/api/beacon/send_now", {}); alert(r.ok ? (r.dry_run ? "Dry run logged: " : "Sent: ") + r.message : "Not sent: " + r.error); refreshBeaconPane();
+    const r = await api("/api/beacon/send_now", {});
+    alert(r.ok ? (r.queued ? `Queued: ${r.waiting_for}. It goes out as soon as VarAC lands there (gives up after ${Math.round(r.expires_in_seconds / 60)} min).` : (r.dry_run ? "Dry run logged: " : "Sent: ") + r.message) : "Not sent: " + r.error);
+    refreshBeaconPane();
   };
+  $("btn-cancel-pending").onclick = async () => { await api("/api/beacon/cancel_pending", {}); refreshBeaconPane(); };
   document.querySelector('[data-cfg="beacon.message_template"]').addEventListener("input", async () => { await api("/api/config", { beacon: { message_template: document.querySelector('[data-cfg="beacon.message_template"]').value, comment: document.querySelector('[data-cfg="beacon.comment"]').value, coord_decimals: Number(document.querySelector('[data-cfg="beacon.coord_decimals"]').value) } }); refreshBeaconPane(); });
 
   // tiles pane

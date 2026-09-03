@@ -127,6 +127,12 @@ Fixed interval there, or QSY to a tracker frequency. The smart defaults follow
 HF APRS practice (roughly every 10 minutes while moving, hourly when parked);
 a VHF profile for VARA FM is one click away.
 
+**Preferred bands.** With VarAC's frequency scanner running, a broadcast would go
+out on whatever band the scanner is on at that moment. List the bands you want in
+Position TX (e.g. `40m, 20m`) and VarMap holds every broadcast, automatic or manual,
+until VarAC lands on one of them (it reads VarAC's current frequency from `VarAC.log`).
+A queued manual send gives up after a configurable wait and can be cancelled.
+
 VarMap also holds off while VarAC is busy: it reads VarAC's button states and
 will not hand over a broadcast while VarAC is connected to a station (QSO,
 VMail, ping, file transfer, when VarAC disables BROADCAST) or while the

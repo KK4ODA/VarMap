@@ -265,6 +265,10 @@ def create_app(rt) -> Flask:
     def api_beacon_rehearse():
         return jsonify(rt.beacon.rehearse())
 
+    @app.route("/api/beacon/cancel_pending", methods=["POST"])
+    def api_beacon_cancel_pending():
+        return jsonify({"ok": True, "cancelled": rt.beacon.cancel_pending()})
+
     @app.route("/api/beacon/reset", methods=["POST"])
     def api_beacon_reset():
         rt.beacon.reset_schedule()

@@ -17,6 +17,7 @@ import time
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
+from ..domain.geo import freq_to_band, normalise_band
 from ..domain.gpstag import APRS_CONSENT_NO, APRS_CONSENT_YES, format_gps_tag
 from ..domain.smartbeacon import Fix, make_policy
 from ..domain.timeparse import iso_utc, now_utc, parse_iso
@@ -86,11 +87,13 @@ class BeaconService(threading.Thread):
         self._last_fail_reason = ""
         self._cf: Optional[int] = None
         self._cf_checked_at = 0.0
+        self._pending: Optional[Dict[str, Any]] = None   # a manual send waiting for a preferred band
         self.state: Dict[str, Any] = {
             "enabled": False, "dry_run": True, "mode": "fixed", "method": "broadcast",
             "blocked": None, "decision": None, "next_due_seconds": None,
             "last_tx": None, "tx_last_hour": 0, "last_tick": None, "ignore_dcd": None, "varac_activity": None,
             "on_calling_frequency_hz": None, "current_frequency_hz": None,
+            "current_band": None, "preferred_bands": [], "holding_for_band": None, "pending": None,
         }
 
     def stop(self) -> None:
@@ -221,6 +224,30 @@ class BeaconService(threading.Thread):
                 self.state["current_frequency_hz"] = self.vc.current_frequency_hz()
         return self._cf
 
+    # -- preferred bands (the scanner decides the frequency; we decide the moment) ------
+    def _preferred_bands(self, bc: Dict[str, Any]) -> list:
+        raw = bc.get("preferred_bands") or []
+        if isinstance(raw, str):
+            raw = raw.split(",")
+        return [normalise_band(b) for b in raw if normalise_band(b)]
+
+    def _current_band(self) -> Optional[str]:
+        try:
+            hz = self.vc.current_frequency_hz()
+        except Exception:  # noqa: BLE001
+            hz = None
+        return freq_to_band(hz)
+
+    def _band_hold(self, bc: Dict[str, Any]) -> Optional[str]:
+        """None when VarAC is on an acceptable band, else a human reason to wait."""
+        pref = self._preferred_bands(bc)
+        if not pref:
+            return None
+        band = self._current_band()
+        if band and band in pref:
+            return None
+        return f"waiting for VarAC to be on {'/'.join(pref)} (now {band or 'unknown'})"
+
     def _varac_activity(self) -> Dict[str, Any]:
         """Cached (5 s) read of VarAC's button states: connected / dialog open."""
         now = time.time()
@@ -263,12 +290,17 @@ class BeaconService(threading.Thread):
         bc = clamp_beacon_config(self.cfg.get("beacon"))
         fix = self.tracker.current()
         with self._lock:
+            hold = self._band_hold(bc)
             self.state.update({"enabled": bool(bc.get("enabled")), "dry_run": bool(bc.get("dry_run")),
                                "mode": bc.get("mode"), "method": bc.get("method"), "limits": dict(LIMITS),
                                "effective": {"fixed": bc["fixed"], "smart": bc["smart"], "max_per_hour": bc["max_per_hour"]},
-                               "last_tick": iso_utc(now_utc()),
+                               "last_tick": iso_utc(now_utc()), "current_band": self._current_band(),
+                               "preferred_bands": self._preferred_bands(bc), "holding_for_band": None,
+                               "pending": self._pending_summary(),
                                "tx_last_hour": self.repo.beacon_tx_count_since(
                                    iso_utc(now_utc() - timedelta(hours=1)), real_only=False)})
+            self._service_pending(bc, fix, hold)
+            self.state["pending"] = self._pending_summary()
             if not bc.get("enabled"):
                 self.state.update({"blocked": None, "decision": "disabled", "next_due_seconds": None})
                 return
@@ -281,7 +313,58 @@ class BeaconService(threading.Thread):
             d = policy.evaluate(pfix, now_utc())
             self.state.update({"blocked": None, "decision": d.reason, "next_due_seconds": d.next_due_seconds})
             if d.send:
+                if hold:
+                    # Due, but VarAC's scanner is on another band: keep it pending.  The policy
+                    # keeps saying "send" each tick until the band comes round.
+                    self.state.update({"decision": "holding_band", "holding_for_band": hold})
+                    return
                 self._transmit(bc, fix, d.reason)
+
+    # -- manual sends waiting for a preferred band ---------------------------------------
+    def _pending_summary(self) -> Optional[Dict[str, Any]]:
+        p = self._pending
+        if not p:
+            return None
+        return {"kind": p["kind"], "message": p["message"], "requested_at": p["requested_at"],
+                "expires_at": p["expires_at"], "waiting_for": p["waiting_for"]}
+
+    def _queue_pending(self, bc: Dict[str, Any], kind: str, trigger: str, message: Optional[str], hold: str) -> Dict[str, Any]:
+        now = now_utc()
+        wait = max(60, int(bc.get("band_wait_max_seconds") or 600))
+        self._pending = {"kind": kind, "trigger": trigger, "message": message, "requested_at": iso_utc(now),
+                         "expires_at": iso_utc(now + timedelta(seconds=wait)), "waiting_for": hold}
+        self.state["pending"] = self._pending_summary()
+        log.info("manual send queued: %s (%s)", kind, hold)
+        return {"ok": True, "queued": True, "message": message, "waiting_for": hold, "expires_in_seconds": wait}
+
+    def _service_pending(self, bc: Dict[str, Any], fix: Optional[OwnFix], hold: Optional[str]) -> None:
+        p = self._pending
+        if not p:
+            return
+        now = now_utc()
+        if parse_iso(p["expires_at"]) and now > parse_iso(p["expires_at"]):
+            log.warning("queued manual send expired without VarAC reaching a preferred band")
+            self.repo.beacon_tx_add(requested_at=p["requested_at"], sent_at=None, lat=None, lon=None, grid=None,
+                                    trigger=p["trigger"], method="broadcast", message=p["message"],
+                                    dry_run=1 if bc.get("dry_run") else 0, ok=0,
+                                    error="gave up waiting for a preferred band")
+            self._pending = None
+            return
+        if hold:
+            self._pending["waiting_for"] = hold
+            return
+        blocked = self._blocked_reason(bc, fix, manual=True)
+        if blocked:
+            return  # keep waiting; spacing / VarAC busy will clear
+        self._pending = None
+        self._transmit(bc, fix, p["trigger"], message=p["message"])
+
+    def cancel_pending(self) -> bool:
+        with self._lock:
+            had = self._pending is not None
+            self._pending = None
+            self.state["pending"] = None
+            return had
 
     # -- transmit ------------------------------------------------------------------
     def _transmit(self, bc: Dict[str, Any], fix: OwnFix, trigger: str, message: Optional[str] = None) -> Dict[str, Any]:
@@ -350,6 +433,9 @@ class BeaconService(threading.Thread):
             blocked = self._blocked_reason(bc, fix, manual=True)
             if blocked:
                 return {"ok": False, "error": blocked}
+            hold = self._band_hold(bc)
+            if hold:
+                return self._queue_pending(bc, "position", "manual", None, hold)
             row = self._transmit(bc, fix, "manual")
             return {"ok": bool(row["ok"]), "error": row.get("error"), "message": row.get("message"),
                     "dry_run": bool(row.get("dry_run"))}
@@ -366,6 +452,9 @@ class BeaconService(threading.Thread):
             if blocked:
                 return {"ok": False, "error": blocked}
             msg = self.relay_message(station, comment)
+            hold = self._band_hold(bc)
+            if hold:
+                return self._queue_pending(bc, "relay", f"relay:{station['callsign']}", msg, hold)
             row = self._transmit(bc, fix, f"relay:{station['callsign']}", message=msg)
             return {"ok": bool(row["ok"]), "error": row.get("error"), "message": msg, "dry_run": bool(row.get("dry_run"))}
 

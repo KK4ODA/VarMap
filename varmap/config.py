@@ -96,6 +96,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "aprs_consent": False,            # adds APRS:Y to broadcasts: others may relay my position to APRS
         "coord_decimals": 5,              # 5 = ~1 m; 3 = ~100 m; 2 = ~1 km (privacy)
         "dcd_guard": True,                # refuse to hand VarAC a broadcast while its 'Ignore DCD' box is ticked
+        "preferred_bands": [],            # e.g. ["40m", "20m"]: hold broadcasts until VarAC (scanner) is on one of these; [] = any band
+        "band_wait_max_seconds": 600,     # manual sends queued for a preferred band give up after this long
         "max_fix_age_seconds": 900,       # never beacon a stale position
         "max_per_hour": 2,                # independent rate limiter (hard cap 6, see services/beacon.py)
         "cf_window_hz": 3000,             # +- window around a calling frequency that counts as "on it" (covers VarAC's slots)
