@@ -1,0 +1,8 @@
+# Normalise line endings: LF in the repository, native on checkout except
+# Windows batch files and the Inno Setup script, which must stay CRLF.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.iss text eol=crlf
+*.png binary
+*.mbtiles binary
+*.db binary
