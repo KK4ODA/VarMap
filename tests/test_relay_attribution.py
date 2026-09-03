@@ -60,8 +60,31 @@ def test_damaged_database_is_quarantined_and_rebuilt():
     p = os.path.join(d, "varmap.db")
     with open(p, "wb") as f:
         f.write(b"SQLite format 3\x00" + b"\xff" * 4000)        # header ok, pages garbage
-    repo = Repository(p)
+    repo = Repository(p, check_integrity=True)
     assert repo.integrity.startswith("damaged") and repo.quarantined and os.path.isfile(repo.quarantined)
     assert repo.counts()["stations"] == 0 and repo.counts()["db_integrity"].startswith("damaged")
-    repo2 = Repository(p)                                          # the rebuilt file is healthy
+    repo.close()
+    repo2 = Repository(p, check_integrity=True)                    # the rebuilt file is healthy
     assert repo2.integrity == "ok" and repo2.quarantined is None
+
+
+def test_integrity_check_is_skipped_while_another_process_holds_the_db():
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "varmap.db")
+    Repository(p).close()                                          # create a healthy DB (WAL mode)
+    holder = sqlite3.connect(p, isolation_level=None)
+    holder.execute("PRAGMA journal_mode = WAL")
+    holder.execute("BEGIN IMMEDIATE")                              # simulate the running VarMap mid-write
+    holder.execute("INSERT INTO app_meta(key, value) VALUES('x','y')")
+    repo = Repository(p, check_integrity=True)
+    assert repo.integrity.startswith("unchecked (database in use") and repo.quarantined is None
+    assert os.path.isfile(p)                                       # never renamed away from the holder
+    holder.execute("ROLLBACK"); holder.close()
+
+
+def test_integrity_check_runs_when_db_is_free():
+    d = tempfile.mkdtemp()
+    p = os.path.join(d, "varmap.db")
+    Repository(p).close()
+    repo = Repository(p, check_integrity=True)
+    assert repo.integrity == "ok" and repo.quarantined is None

@@ -39,23 +39,48 @@ class IngestStats:
 
 
 class Repository:
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: str, check_integrity: bool = False) -> None:
         self.path = path
         self._local = threading.local()
         self._write_lock = threading.RLock()
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.quarantined: Optional[str] = None
         self.integrity: str = "unchecked"
-        self._check_and_quarantine()
+        if check_integrity:
+            self._check_and_quarantine()
         self.init_schema()
 
     def _check_and_quarantine(self) -> None:
         """Start-up integrity check.  Our database is a cache of VarAC's history, so a
         damaged file is moved aside and rebuilt rather than nursed along.  User notes
-        and favourites in the damaged file are lost; everything else comes back."""
+        and favourites in the damaged file are lost; everything else comes back.
+
+        ONLY the main server may call this, and only after it has established that
+        no other VarMap holds the database: a second process reading a WAL database
+        that another process has open can report 'malformed' without any real damage
+        (observed on Windows, 2026-09-03), and quarantining then would rename the live
+        file away from the running instance.
+        """
         if not os.path.isfile(self.path):
             self.integrity = "new"
             return
+        if os.path.isfile(self.path + "-shm") or os.path.isfile(self.path + "-wal"):
+            # A WAL/shm left behind means either a crash (fine to check) or another
+            # process still open on it.  Probe: an exclusive lock fails if it is in use.
+            try:
+                probe = sqlite3.connect(self.path, timeout=1)
+                try:
+                    probe.execute("PRAGMA locking_mode = EXCLUSIVE")
+                    probe.execute("BEGIN IMMEDIATE")
+                    probe.execute("ROLLBACK")
+                finally:
+                    probe.close()
+            except sqlite3.OperationalError as e:
+                self.integrity = f"unchecked (database in use: {e})"
+                log.warning("integrity check skipped: %s", self.integrity)
+                return
+            except sqlite3.DatabaseError:
+                pass  # fall through to the real check
         try:
             c = sqlite3.connect(self.path, timeout=15)
             try:
@@ -94,6 +119,15 @@ class Repository:
             c.execute("PRAGMA busy_timeout = 15000")
             self._local.conn = c
         return c
+
+    def close(self) -> None:
+        """Close this thread's connection (tests and clean shutdown)."""
+        c = getattr(self._local, "conn", None)
+        if c is not None:
+            try:
+                c.close()
+            finally:
+                self._local.conn = None
 
     def init_schema(self) -> None:
         here = os.path.dirname(os.path.abspath(__file__))

@@ -43,12 +43,15 @@ def setup_logging(log_path: Optional[str] = None, level: int = logging.INFO) -> 
 
 
 class Runtime:
-    def __init__(self, config_path: Optional[str] = None, start_threads: bool = True) -> None:
+    def __init__(self, config_path: Optional[str] = None, start_threads: bool = True,
+                 check_integrity: bool = False) -> None:
         self.cfg = Config(config_path)
         if not os.path.isfile(self.cfg.path):
             self.cfg.save()
         self.vc = VaracConfig(self.cfg)
-        self.repo = Repository(self.cfg.db_path())
+        # check_integrity is True only for the main server, after the port check has
+        # shown that no other VarMap is running (see __main__).
+        self.repo = Repository(self.cfg.db_path(), check_integrity=check_integrity)
         self.tiles = TileStore(self.cfg.tiles_path())
         self.tile_fetcher = TileFetcher(self.cfg)
         self.downloader = RegionDownloader(self.tiles, self.tile_fetcher, self.cfg)

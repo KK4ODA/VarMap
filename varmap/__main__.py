@@ -63,21 +63,32 @@ def main(argv=None) -> int:
                 print(f"  {c['hwnd']:>10}  {c['class']:<40} {c['rect']}  {c['text']!r}")
         return 0
 
-    rt = Runtime(args.config, start_threads=False)
-    setup_logging(rt.cfg.log_path(), logging.DEBUG if args.verbose else logging.INFO)
-    log.info("VarMap %s", __version__)
-
     if args.status:
+        # Read-only diagnostics: never checks or touches the database's integrity, because
+        # the main VarMap may be running on it.
+        rt = Runtime(args.config, start_threads=False, check_integrity=False)
+        setup_logging(None, logging.INFO)
         from .integration.varac_db import validate_database
         print(json.dumps({"varac": rt.vc.describe(), "database": validate_database(rt.vc.db_path()),
                           "counts": rt.repo.counts(), "own": rt.tracker.reader.describe()}, indent=2, default=str))
         return 0
 
-    host = args.host or rt.cfg.get("web", "host") or "127.0.0.1"
-    port = args.port or int(rt.cfg.get("web", "port") or 5001)
+    # The port check comes BEFORE the runtime is built: it is our "is another VarMap
+    # running?" test, and the database integrity check must only run when the answer is no.
+    from .config import Config
+    pre = Config(args.config)
+    host = args.host or pre.get("web", "host") or "127.0.0.1"
+    port = args.port or int(pre.get("web", "port") or 5001)
     if _port_in_use("127.0.0.1", port):
+        setup_logging(None, logging.INFO)
         log.error("Port %d is already in use. Is another VarMap running? Change web.port in config.json.", port)
         return 1
+
+    rt = Runtime(args.config, start_threads=False, check_integrity=True)
+    setup_logging(rt.cfg.log_path(), logging.DEBUG if args.verbose else logging.INFO)
+    log.info("VarMap %s", __version__)
+    if rt.repo.quarantined:
+        log.error("The station database was damaged and has been moved to %s; rebuilding from VarAC.", rt.repo.quarantined)
 
     from .web.app import create_app
     app = create_app(rt)
