@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 (2026-09-03)
+
+- Fix: the start-up integrity check could rename the live database when a second VarMap process (for example `--status`) opened it while VarMap was running. The check now runs only in the main server after the port check proves it is the sole instance, is skipped when another process holds the database, and `--status` never checks integrity.
+- Updater: proper batch self-delete (no more 'batch file cannot be found'), leftover installers are removed.
+
 ## 0.3.1 (2026-09-03)
 
 - Fix: a relayed position broadcast ('APRS KN4PLO <GPS:..> via KK4ODA') was attributed to the relaying station; it now belongs to the named station (source 'relayed') and existing databases are repaired at start-up.
