@@ -71,6 +71,11 @@ class Repository:
             cols = {r[1] for r in c.execute("PRAGMA table_info(beacon_tx)")}
             if "frequency_hz" not in cols:
                 c.execute("ALTER TABLE beacon_tx ADD COLUMN frequency_hz INTEGER")
+            scols = {r[1] for r in c.execute("PRAGMA table_info(station)")}
+            if "aprs_symbol" not in scols:
+                c.execute("ALTER TABLE station ADD COLUMN aprs_symbol TEXT")
+            if "is_object" not in scols:
+                c.execute("ALTER TABLE station ADD COLUMN is_object INTEGER NOT NULL DEFAULT 0")
 
     # -- meta / cursors ---------------------------------------------------
     def meta_get(self, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -182,14 +187,15 @@ class Repository:
                 "is_away=?, is_emcomm=?, is_email_gateway=CASE WHEN ? THEN ? ELSE is_email_gateway END, "
                 "is_bbs=CASE WHEN ? THEN ? ELSE is_bbs END, is_ai_gateway=CASE WHEN ? THEN ? ELSE is_ai_gateway END, "
                 "has_diploma=CASE WHEN ? THEN ? ELSE has_diploma END, last_cq_tag=COALESCE(?, last_cq_tag), "
-                "is_own=CASE WHEN ? THEN 1 ELSE is_own END, updated_at=? WHERE callsign=?",
+                "is_own=CASE WHEN ? THEN 1 ELSE is_own END, aprs_symbol=COALESCE(?, aprs_symbol), "
+                "is_object=CASE WHEN ? THEN 1 ELSE is_object END, updated_at=? WHERE callsign=?",
                 (heard_iso, obs.snr_db, obs.frequency_hz, obs.band, obs.bandwidth, obs.frame_kind, obs.text,
                  1 if obs.is_away else 0, 1 if obs.is_emcomm else 0,
                  obs.frame_kind == "beacon", 1 if obs.is_email_gateway else 0,
                  obs.frame_kind == "beacon", 1 if obs.is_bbs else 0,
                  obs.frame_kind == "beacon", 1 if obs.is_ai_gateway else 0,
                  obs.frame_kind == "beacon", 1 if obs.has_diploma else 0,
-                 obs.cq_tag, obs.is_own, now_iso, callsign))
+                 obs.cq_tag, obs.is_own, obs.symbol, obs.is_object, now_iso, callsign))
             st["last_heard"] = heard_iso
         else:
             c.execute("UPDATE station SET heard_count=heard_count+1, first_heard=MIN(first_heard, ?), updated_at=? "

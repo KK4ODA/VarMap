@@ -22,6 +22,7 @@ SOURCE_RANK = {
     "manual": 4,
     "gps_tag": 3,
     "broadcast_gps": 3,
+    "aprs": 3,           # exact coordinates from an APRS packet (via Graywolf)
     "beacon": 2,
     "cq": 2,
     "broadcast_grid": 1,

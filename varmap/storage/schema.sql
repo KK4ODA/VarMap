@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS station (
     has_diploma         INTEGER NOT NULL DEFAULT 0,
     last_cq_tag         TEXT,
 
+    aprs_symbol         TEXT,           -- APRS symbol table+code when heard via Graywolf
+    is_object           INTEGER NOT NULL DEFAULT 0,   -- APRS object/item
+
     op_name             TEXT,
     qth                 TEXT,
     notes               TEXT,

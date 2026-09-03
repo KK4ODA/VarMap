@@ -275,9 +275,10 @@ class NmeaSerialReader:
 class OwnPositionReader:
     """Resolves our own position from the configured or best available source."""
 
-    def __init__(self, varac_config, cfg) -> None:
+    def __init__(self, varac_config, cfg, graywolf_client_getter=None) -> None:
         self.vc = varac_config
         self.cfg = cfg
+        self._graywolf = graywolf_client_getter   # callable -> GraywolfClient or None
         self._nmea: Optional[NmeaSerialReader] = None
         self.last_source: Optional[str] = None
         self.last_error: Optional[str] = None
@@ -342,15 +343,40 @@ class OwnPositionReader:
             return None
         return OwnFix(lat=c[0], lon=c[1], time=now_utc(), source="my_locator", grid=g, accuracy_m=3800.0)
 
+    def _graywolf_fix(self) -> Optional[OwnFix]:
+        g = self.cfg.get("graywolf") or {}
+        if not (g.get("enabled") and g.get("use_for_own_position")) or not self._graywolf:
+            return None
+        client = self._graywolf()
+        if client is None:
+            return None
+        from .graywolf import position_to_own_fix
+        return position_to_own_fix(client.position())
+
+    def from_graywolf_gps(self) -> Optional[OwnFix]:
+        """Graywolf's live GPS fix (speed and heading included)."""
+        fix = self._graywolf_fix()
+        return fix if fix and fix.fix_quality == "gps" else None
+
+    def from_graywolf_fixed(self) -> Optional[OwnFix]:
+        """Graywolf's configured fixed position: a static source, ranked with ManualGPSData."""
+        fix = self._graywolf_fix()
+        return fix if fix and fix.fix_quality != "gps" else None
+
+    def from_graywolf(self) -> Optional[OwnFix]:
+        return self._graywolf_fix()
+
     # -- resolution ------------------------------------------------------
     def read(self) -> Optional[OwnFix]:
         mode = (self.cfg.get("own_station", "position_source") or "auto").lower()
         ladder = {
+            "graywolf": [self.from_graywolf],
             "gps_log": [self.from_gps_log],
             "nmea": [self.from_nmea],
             "manual_ini": [self.from_manual_ini],
             "my_locator": [self.from_my_locator],
-        }.get(mode, [self.from_gps_log, self.from_nmea, self.from_manual_ini, self.from_my_locator])
+        }.get(mode, [self.from_graywolf_gps, self.from_gps_log, self.from_nmea, self.from_manual_ini,
+                     self.from_graywolf_fixed, self.from_my_locator])
         for fn in ladder:
             try:
                 fix = fn()

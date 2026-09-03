@@ -124,6 +124,24 @@ spacing, VarAC must be running, everything logged. **Stop auto position TX** is 
 kill switch; **Test VarAC dialog (no TX)** rehearses the automation without sending. GUI automation briefly steals focus and needs VarAC's interface
 language set to English.
 
+## APRS via Graywolf
+
+VarMap can show the APRS world on the same map. It talks to
+[Graywolf](https://github.com/chrissnell/graywolf), a modern APRS station
+(software modem, digipeater, iGate, web UI), through Graywolf's REST API:
+
+- **Stations heard on APRS** appear as diamond markers (squares for APRS
+  objects) with exact coordinates, symbol and comment, filterable with
+  *Position source = APRS* and switchable off in the Flags menu.
+- **Your position from Graywolf's GPS**, with speed and heading, as the
+  preferred rung of the own-position ladder when Graywolf has a live fix.
+
+Settings → APRS: Graywolf URL (default `http://127.0.0.1:8080`), a Graywolf
+login (Graywolf has no API keys; use a dedicated account, the password is kept
+in `config.json`), poll interval, optional bounding box, and a Test connection
+button. This integration is receive-only: VarMap never transmits through Graywolf.
+Gating VarAC stations to APRS as objects is planned as an opt-in feature.
+
 ## Offline maps
 
 Every tile viewed is cached in `tiles.mbtiles`. Settings → Offline maps lets you

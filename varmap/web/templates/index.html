@@ -39,8 +39,9 @@
         </select></label>
       <label class="fl" title="Where the station's position came from. Beacons and CQs carry a grid square; broadcasts and VMails can carry exact GPS coordinates">Position source
         <select id="f-src">
-          <option value="" selected>Any source</option><option value="beacon">Beacon or CQ (grid)</option>
-          <option value="broadcast">Broadcast text</option><option value="vmail">VMail GPS tag</option><option value="exact">Exact coordinates only</option>
+          <option value="" selected>Any source</option><option value="beacon">VarAC beacon or CQ (grid)</option>
+          <option value="broadcast">VarAC broadcast text</option><option value="vmail">VarAC VMail GPS tag</option>
+          <option value="aprs">APRS (via Graywolf)</option><option value="exact">Exact coordinates only</option>
         </select></label>
       <hr>
       <button id="btn-clear-filters" title="Reset every filter in this menu and in Flags">Clear all filters</button>
@@ -57,6 +58,7 @@
       <hr>
       <label title="Stations that were heard but never sent a grid locator (standard beacons) appear in the list but cannot be placed on the map"><input type="checkbox" id="f-unlocated" checked> Unlocated in list</label>
       <label title="Include your own transmissions as logged by VarAC"><input type="checkbox" id="f-own" checked> Show own beacons</label>
+      <label title="Show stations heard on APRS through Graywolf (diamond markers). Needs the APRS tab in Settings"><input type="checkbox" id="f-aprs" checked> Show APRS stations</label>
     </div>
   </details>
   <details class="dd" id="dd-map" title="How the map draws stations"><summary>Map <span class="caret"></span></summary>
@@ -106,6 +108,7 @@
 <footer id="statusbar">
   <span id="st-varac" title="VarAC database connection, last poll, frames stored, current VarAC frequency and database version">VarAC: …</span>
   <span id="st-own" title="My own position and where it comes from (gps_log = VarAC's GPS file, manual_ini = VarAC ManualGPSData, my_locator = grid from VarAC.ini)">Own: …</span>
+  <span id="st-aprs" class="hidden" title="APRS feed from Graywolf: connection state and stations received">APRS: …</span>
   <span id="st-tiles" title="Map tiles: online + cache means new tiles are fetched and saved; cache only means fully offline">Tiles: …</span>
   <span id="st-backfill" class="hidden" title="Reading VarAC's beacon history into VarMap's own database"></span>
   <span class="spacer"></span>
@@ -119,6 +122,7 @@
         <button class="tab active" data-pane="varac" title="Where VarAC and its database are">VarAC</button>
         <button class="tab" data-pane="position" title="Where VarMap gets my own position from">My position</button>
         <button class="tab" data-pane="beacon" title="Broadcasting my position through VarAC">Position TX</button>
+        <button class="tab" data-pane="aprs" title="APRS stations via the Graywolf APRS client">APRS</button>
         <button class="tab" data-pane="tiles" title="Downloading map areas for use without internet">Offline maps</button>
         <button class="tab" data-pane="display" title="Units, colours and how long history is kept">Display</button>
       </div>
@@ -148,7 +152,8 @@
       <h3>My position</h3>
       <label title="Auto tries the sources from best to worst: VarAC's GPS log file, then your own NMEA GPS, then VarAC's ManualGPSData, then the MyLocator grid">Source
         <select data-cfg="own_station.position_source">
-          <option value="auto">Auto (GPS log → NMEA → manual → MyLocator)</option>
+          <option value="auto">Auto (Graywolf GPS → VarAC GPS log → NMEA → manual → MyLocator)</option>
+          <option value="graywolf">Graywolf (APRS client) position</option>
           <option value="gps_log">VarAC GPS log file</option>
           <option value="nmea">Own NMEA GPS on a COM port</option>
           <option value="manual_ini">VarAC ManualGPSData</option>
@@ -222,6 +227,26 @@
       </div>
       <h4>Position TX log</h4>
       <div id="beacon-log" class="log" title="Every position broadcast VarMap requested: time, why it was triggered, whether it was a dry run, and the message"></div>
+    </div>
+
+    <div class="pane" data-pane="aprs">
+      <h3>APRS via Graywolf</h3>
+      <p class="muted">Graywolf (<a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">chrissnell/graywolf</a>) is an APRS station: modem, digipeater and iGate with a web interface. When it runs on this PC or your LAN, VarMap reads the stations it hears and shows them on the same map as the VarAC network, and can take your GPS position from it. This is receive-only: VarMap never transmits through Graywolf.</p>
+      <div class="grid2">
+        <label title="Turn the APRS feed on. VarMap polls Graywolf's station list every few seconds"><input type="checkbox" data-cfg="graywolf.enabled"> Enable APRS feed from Graywolf</label>
+        <label title="Also offer Graywolf's GPS fix as my own position (with speed and heading). Auto mode prefers it when Graywolf has a live GPS fix"><input type="checkbox" data-cfg="graywolf.use_for_own_position"> Use Graywolf's GPS for my position</label>
+        <label title="Address of Graywolf's web interface. Default is this PC on port 8080">Graywolf URL <input data-cfg="graywolf.url" placeholder="http://127.0.0.1:8080"></label>
+        <label title="A Graywolf login. Graywolf has no API keys, so VarMap signs in like a browser. A dedicated Graywolf user for VarMap is a good idea">Username <input data-cfg="graywolf.username" autocomplete="off"></label>
+        <label title="Stored in VarMap's config.json in plain text; use a dedicated account">Password <input type="password" data-cfg="graywolf.password" autocomplete="new-password"></label>
+        <label title="How often to ask Graywolf for new stations">Poll interval (s) <input type="number" min="3" data-cfg="graywolf.poll_interval_seconds"></label>
+        <label title="How far back Graywolf's history to load the first time the feed is enabled (seconds; 86400 = one day)">Initial backfill (s) <input type="number" min="60" data-cfg="graywolf.backfill_seconds"></label>
+        <label title="Optional area limit as south,west,north,east in decimal degrees. Blank = everything Graywolf hears">Bounding box <input data-cfg="graywolf.bbox" placeholder="blank = whole world"></label>
+      </div>
+      <div class="row">
+        <button id="btn-graywolf-test" title="Sign in to Graywolf with the details above and report its version, station count and GPS state">Test connection</button>
+        <span id="graywolf-test-result" class="muted"></span>
+      </div>
+      <pre id="graywolf-info" class="info" title="Live state of the APRS feed"></pre>
     </div>
 
     <div class="pane" data-pane="tiles">

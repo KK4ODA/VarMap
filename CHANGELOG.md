@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- APRS via Graywolf: stations heard by Graywolf on the map (diamond markers), own position from Graywolf's GPS, APRS settings tab with connection test. Receive-only.
+- Position TX: 6/hour hard cap (default 2), no smart timing on VarAC calling frequencies, HF/VHF timing profiles, DCD guard, QSO hold-off, frequency logged per transmission, bands heard per station.
+
 ## 0.1.0 (2026-09-03)
 
 First public release.

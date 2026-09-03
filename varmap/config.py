@@ -32,13 +32,24 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "own_station": {
         "callsign": "",                   # '' => Mycall from VarAC.ini
-        "position_source": "auto",        # auto | gps_log | manual_ini | my_locator | nmea
+        "position_source": "auto",        # auto | graywolf | gps_log | manual_ini | my_locator | nmea
         "gps_log_path": "",               # '' => WriteGPSDataToFileName from VarAC.ini
         "nmea_com_port": "",
         "nmea_baud": 9600,
         "update_interval_seconds": 5,
         "record_interval_seconds": 60,    # store a fix at least this often even if unmoved
         "record_min_move_m": 25.0,
+    },
+    "graywolf": {                         # APRS via the Graywolf station software (receive-only for now)
+        "enabled": False,
+        "url": "http://127.0.0.1:8080",
+        "username": "",
+        "password": "",
+        "poll_interval_seconds": 10,
+        "lookback_seconds": 3600,         # per delta poll
+        "backfill_seconds": 86400,        # first poll after enabling
+        "bbox": "",                       # '' = whole world; else sw_lat,sw_lon,ne_lat,ne_lon
+        "use_for_own_position": True,     # offer Graywolf's GPS fix in the own-position ladder
     },
     "staleness": {"fresh_minutes": 30, "recent_hours": 2, "stale_hours": 24, "hide_after_days": 30},
     "history": {"keep_days": 90, "max_positions_per_station": 1000, "prune_interval_minutes": 60},

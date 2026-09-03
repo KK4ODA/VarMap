@@ -37,6 +37,7 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   function fmtFreq(hz) { if (!hz) return ""; const s = String(hz); return s.replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
   function dist(st) { return st.distance_display || ""; }
+  function isAprs(st) { return st.last_frame_kind === "aprs" || st.position_source === "aprs"; }
   function bandsStr(st) {
     const b = st.bands_recent || [];
     if (b.length > 1) return b.join("·");
@@ -100,6 +101,7 @@
           <div class="lg"><span class="own-marker sym"><span class="ring"></span></span> my station</div>
           <div class="lg"><span class="stn fresh suspect sym"><span class="dot"></span></span> dashed: implausible jump from last position</div>
           <div class="lg"><span class="stn fresh emcomm sym"><span class="dot"></span></span> red halo: EmComm beacon</div>
+          <div class="lg"><span class="stn fresh aprs sym"><span class="dot"></span></span> diamond: APRS station via Graywolf (square: APRS object)</div>
           <div class="lg"><span class="sym"><i class="dot none"></i></span> heard, no position (list only)</div>
           <div class="lg"><span class="sym"><span class="lg-cluster">12</span></span> cluster; colour = freshest member</div>
           <div class="lg"><span class="sym"><span class="lg-rect"></span></span> grid square of a grid-derived position (±4 km)</div>
@@ -156,6 +158,7 @@
 
   function markerIcon(st) {
     const cls = ["stn", st.state, st.position_suspect ? "suspect" : "", st.is_emcomm ? "emcomm" : "",
+      isAprs(st) ? "aprs" : "", st.is_object ? "object" : "",
       S.selected === st.callsign ? "sel" : "", S.hover === st.callsign ? "hl" : ""].filter(Boolean).join(" ");
     return L.divIcon({ className: cls, html: `<div class="dot"></div><div class="lbl">${esc(st.callsign)}${st.is_away ? " ⌛" : ""}</div>`, iconSize: [0, 0] });
   }
@@ -202,7 +205,7 @@
   // ---------------------------------------------------------------- filters
   const FILTER_DEFAULTS = { "f-age": "0", "f-heard": "604800", "f-band": "", "f-dist": "0", "f-snr": "", "f-src": "",
     "f-emcomm": false, "f-bbs": false, "f-email": false, "f-ai": false, "f-pota": false, "f-fav": false };
-  const SRC_GROUPS = { beacon: ["beacon", "cq"], broadcast: ["broadcast_gps", "broadcast_grid"], vmail: ["gps_tag"], exact: ["broadcast_gps", "gps_tag", "manual"] };
+  const SRC_GROUPS = { beacon: ["beacon", "cq"], broadcast: ["broadcast_gps", "broadcast_grid"], vmail: ["gps_tag"], aprs: ["aprs"], exact: ["broadcast_gps", "gps_tag", "manual", "aprs"] };
   function filters() {
     return {
       q: $("search").value.trim().toUpperCase(), age: Number($("f-age").value), heard: Number($("f-heard").value),
@@ -210,11 +213,13 @@
       src: $("f-src").value,
       emcomm: $("f-emcomm").checked, bbs: $("f-bbs").checked, email: $("f-email").checked, ai: $("f-ai").checked,
       pota: $("f-pota").checked, fav: $("f-fav").checked, unlocated: $("f-unlocated").checked, own: $("f-own").checked,
+      aprs: $("f-aprs").checked,
     };
   }
   function passesCommon(st, f) {
     if (st.is_hidden) return false;
     if (!f.own && st.is_own) return false;
+    if (!f.aprs && isAprs(st)) return false;
     if (f.q && !(st.callsign.includes(f.q) || (st.grid || "").includes(f.q) || (st.qth || "").toUpperCase().includes(f.q) || (st.op_name || "").toUpperCase().includes(f.q))) return false;
     if (f.band && st.last_band !== f.band && !(st.bands_recent || []).includes(f.band)) return false;
     if (f.heard && (ageSec(st.last_heard) ?? Infinity) > f.heard) return false;
@@ -257,7 +262,7 @@
   }
   function saveFilters() {
     const o = {}; for (const id in FILTER_DEFAULTS) { const el = $(id); o[id] = el.type === "checkbox" ? el.checked : el.value; }
-    o["f-unlocated"] = $("f-unlocated").checked; o["f-own"] = $("f-own").checked; o["f-grid"] = $("f-grid").checked; o.sort = $("sort").value;
+    o["f-unlocated"] = $("f-unlocated").checked; o["f-own"] = $("f-own").checked; o["f-aprs"] = $("f-aprs").checked; o["f-grid"] = $("f-grid").checked; o.sort = $("sort").value;
     lsSet("filters", o);
   }
   function loadFilters() {
@@ -267,7 +272,7 @@
     for (const id in o) { const el = $(id); if (!el) continue; if (el.type === "checkbox") el.checked = !!o[id]; else if ([...el.options].some((op) => op.value === String(o[id]))) el.value = o[id]; }
   }
   function applyFilters() { F = filters(); refreshAllMarkers(); renderList(); F = null; updateBadges(); saveFilters(); }
-  ["search", "f-age", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "sort"].forEach((id) => {
+  ["search", "f-age", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "f-aprs", "sort"].forEach((id) => {
     $(id).addEventListener("input", applyFilters); $(id).addEventListener("change", applyFilters);
   });
   $("f-grid").addEventListener("change", () => { showGridRect(S.selected ? S.stations.get(S.selected) : null); saveFilters(); });
@@ -285,6 +290,7 @@
   // ---------------------------------------------------------------- list
   function chips(st) {
     const out = [];
+    if (isAprs(st)) out.push(`<span class="chip aprs" title="Heard on APRS via Graywolf${st.aprs_symbol ? " · symbol " + esc(st.aprs_symbol) : ""}">${st.is_object ? "APRS OBJ" : "APRS"}</span>`);
     if (st.is_emcomm) out.push('<span class="chip em">EMCOMM</span>');
     if (st.is_bbs) out.push('<span class="chip">BBS</span>');
     if (st.is_email_gateway) out.push('<span class="chip">EMAIL</span>');
@@ -349,7 +355,7 @@
   function renderDetail(d) {
     const unl = d.lat == null;
     const acc = d.accuracy_m ? (d.accuracy_m >= 1000 ? `±${(d.accuracy_m / 1000).toFixed(0)} km` : `±${d.accuracy_m.toFixed(0)} m`) : "";
-    const srcName = { beacon: "advanced beacon", cq: "CQ frame", gps_tag: "VMail <GPS:> tag", broadcast_gps: "broadcast <GPS:>", broadcast_grid: "broadcast text (grid)", manual: "manual" }[d.position_source] || d.position_source || "";
+    const srcName = { beacon: "advanced beacon", cq: "CQ frame", gps_tag: "VMail <GPS:> tag", broadcast_gps: "broadcast <GPS:>", broadcast_grid: "broadcast text (grid)", manual: "manual", aprs: "APRS via Graywolf" }[d.position_source] || d.position_source || "";
     const distinctGrids = new Set((d.positions || []).map((p) => p.grid).filter(Boolean)).size;
     const heard = (d.heard || []).map((h) => `<div class="heard-row"><span class="t">${ageStr(h.heard_at)}</span><span>${esc(h.frame_kind)}${h.had_position ? "" : " (no loc)"}</span><span>${esc(h.band || "")} ${h.snr_db ?? ""}</span><span class="txt">${esc(h.text || "")}</span></div>`).join("");
     $("detail").innerHTML = `
@@ -453,6 +459,12 @@
       } else S.ownMarker.setLatLng([own.lat, own.lon]);
       S.ownMarker.bindTooltip(`<b>${esc(h.varac.mycall || "")}</b> ${esc(own.grid || "")}<br>${own.source} · ${ageStr(own.time)} ago`);
     } else { $("st-own").textContent = "Own: no position (" + ((h.own && h.own.last_error) || "no source") + ")"; }
+    const gw = h.graywolf || {};
+    if (gw.enabled) {
+      $("st-aprs").classList.remove("hidden");
+      $("st-aprs").textContent = `APRS: ${gw.connected ? "Graywolf connected" : "Graywolf " + (gw.status || "unavailable")}${gw.last_poll ? " · poll " + ageStr(gw.last_poll) + " ago" : ""}${gw.stations_total ? " · " + gw.stations_total.toLocaleString() + " updates" : ""}`;
+      $("st-aprs").title = gw.last_error || ("Graywolf " + (gw.version || "") + " at " + (gw.base || ""));
+    } else $("st-aprs").classList.add("hidden");
     const t = h.tiles;
     $("st-tiles").textContent = `Tiles: ${t.online_fetch ? "online + cache" : "OFFLINE cache only"}` + (t.download && t.download.active ? ` · downloading ${t.download.done}/${t.download.total}` : "") + (t.last_error && t.online_fetch ? " · fetch error" : "");
     const b = h.beacon; const bp = $("pill-beacon");
@@ -525,9 +537,17 @@
   };
   function refreshSettingsInfo() {
     if (!S.health) return;
-    $("varac-info").textContent = JSON.stringify(S.health.varac, null, 1).replace(/[{}",]/g, "").replace(/\n\s*\n/g, "\n").trim();
-    $("own-info").textContent = JSON.stringify(S.health.own, null, 1).replace(/[{}",]/g, "").replace(/\n\s*\n/g, "\n").trim();
+    const fmt = (o) => JSON.stringify(o, null, 1).replace(/[{}",]/g, "").replace(/\n\s*\n/g, "\n").trim();
+    $("varac-info").textContent = fmt(S.health.varac);
+    $("own-info").textContent = fmt(S.health.own);
+    $("graywolf-info").textContent = fmt(S.health.graywolf || {});
   }
+  $("btn-graywolf-test").onclick = async () => {
+    $("graywolf-test-result").textContent = "testing…";
+    const body = { url: document.querySelector('[data-cfg="graywolf.url"]').value, username: document.querySelector('[data-cfg="graywolf.username"]').value, password: document.querySelector('[data-cfg="graywolf.password"]').value };
+    try { const r = await api("/api/graywolf/test", body); $("graywolf-test-result").textContent = r.ok ? `OK: Graywolf ${r.version || ""}, ${r.stations_24h} stations in 24 h, position ${r.position && r.position.valid ? r.position.source + " " + r.position.lat.toFixed(4) + ", " + r.position.lon.toFixed(4) : "none"}` : "FAILED: " + r.error; }
+    catch (e) { $("graywolf-test-result").textContent = e.message; }
+  };
   async function refreshBeaconPane() {
     if (modal.classList.contains("hidden")) return;
     let b; try { b = await api("/api/beacon"); } catch (e) { return; }

@@ -40,6 +40,8 @@ class Observation:
     has_diploma: bool = False
     cq_tag: Optional[str] = None       # 'POTA', 'DX', ...
     text: Optional[str] = None         # message text for broadcasts / vmails (display, not parsed)
+    symbol: Optional[str] = None       # APRS symbol table+code, e.g. '/>' (aprs source only)
+    is_object: bool = False            # APRS object/item rather than a station
 
     raw: Dict[str, Any] = field(default_factory=dict)
 

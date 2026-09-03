@@ -123,6 +123,11 @@ i.dot.none { background: transparent; border-color: #cfd8dc; border-style: dashe
 .size-xlarge .own-marker .ring::after { left: 7px; top: 7px; width: 8px; height: 8px; }
 .size-xlarge .own-marker .lbl { left: 19px; font-size: 17px; }
 .size-large .marker-cluster, .size-xlarge .marker-cluster { transform: scale(1.25); }
+/* APRS stations (via Graywolf): same colours by age, diamond shape instead of a circle. */
+.stn.aprs .dot { border-radius: 2px; transform: rotate(45deg); }
+.stn.aprs.object .dot { border-radius: 0; transform: rotate(0deg); }
+.chip.aprs { background: #ede7f6; color: #4527a0; }
+i.dot.aprs { border-radius: 2px; transform: rotate(45deg); }
 /* Hover and selection never change the dot's size: a ring is drawn around it instead. */
 .stn.hl .dot { box-shadow: 0 0 0 1.5px #fff, 0 0 0 4px rgba(30,136,229,.55); }
 .stn.sel .dot { box-shadow: 0 0 0 1.5px #fff, 0 0 0 4px var(--accent); }
@@ -167,7 +172,7 @@ i.dot.none { background: transparent; border-color: #cfd8dc; border-style: dashe
 .modal { position: fixed; inset: 0; background: rgba(20,30,40,.45); z-index: 3000; display: flex; align-items: center; justify-content: center; }
 .modal-box { background: var(--panel); width: min(860px, 96vw); max-height: 92vh; border-radius: 8px; display: flex; flex-direction: column; box-shadow: 0 10px 40px rgba(0,0,0,.3); }
 .modal-head { display: flex; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.tabs { display: grid; grid-template-columns: repeat(5, 1fr); flex: 1; max-width: 640px; }
+.tabs { display: grid; grid-template-columns: repeat(6, 1fr); flex: 1; max-width: 720px; }
 .tab { border: 1px solid var(--line); border-left-width: 0; background: #fff; color: var(--muted); border-radius: 0; padding: 6px 8px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 .tab:first-child { border-left-width: 1px; border-radius: 6px 0 0 6px; }
 .tab:last-child { border-radius: 0 6px 6px 0; }

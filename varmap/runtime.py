@@ -12,6 +12,7 @@ from . import __version__
 from .config import Config
 from .integration.varac_config import VaracConfig
 from .services.beacon import BeaconService
+from .services.graywolf_poller import GraywolfPoller
 from .services.own_position import OwnPositionTracker
 from .services.poller import Poller
 from .services.tiles import RegionDownloader, TileFetcher, TileStore
@@ -50,6 +51,7 @@ class Runtime:
         self.tile_fetcher = TileFetcher(self.cfg)
         self.downloader = RegionDownloader(self.tiles, self.tile_fetcher, self.cfg)
         self.poller = Poller(self)
+        self.graywolf = GraywolfPoller(self)
         self.tracker = OwnPositionTracker(self)
         self.beacon = BeaconService(self)
         self._data_version = 0
@@ -63,12 +65,14 @@ class Runtime:
             return
         self.started = True
         self.poller.start()
+        self.graywolf.start()
         self.tracker.start()
         self.beacon.start()
         log.info("VarMap %s runtime started; data dir %s", __version__, self.cfg.data_dir())
 
     def stop(self) -> None:
         self.poller.stop()
+        self.graywolf.stop()
         self.tracker.stop()
         self.beacon.stop()
 
@@ -83,6 +87,7 @@ class Runtime:
     def apply_config(self, patch: Dict[str, Any]) -> None:
         self.cfg.update(patch)
         self.poller.wake()
+        self.graywolf.wake()
         self.tracker.wake()
 
     def health(self) -> Dict[str, Any]:
@@ -101,6 +106,7 @@ class Runtime:
             "version": __version__,
             "varac": safe(self.vc.describe, {}),
             "poller": safe(self.poller.snapshot, {"status": "error", "connected": False}),
+            "graywolf": safe(self.graywolf.snapshot, {"enabled": False, "connected": False}),
             "own": safe(self.tracker.describe, {"fix": None}),
             "beacon": safe(self.beacon.snapshot, {"enabled": False}),
             "counts": safe(self.repo.counts, {}),

@@ -104,6 +104,15 @@ def create_app(rt) -> Flask:
         path = (body.get("path") or "").strip() or rt.vc.db_path()
         return jsonify(validate_database(path))
 
+    @app.route("/api/graywolf/test", methods=["POST"])
+    def api_graywolf_test():
+        body = request.get_json(force=True, silent=True) or {}
+        from ..integration.graywolf import GraywolfClient
+        g = rt.cfg.get("graywolf") or {}
+        c = GraywolfClient(body.get("url") or g.get("url"), body.get("username") or g.get("username"),
+                           body.get("password") or g.get("password"))
+        return jsonify(c.test())
+
     @app.route("/api/poll_now", methods=["POST"])
     def api_poll_now():
         rt.poller.wake()

@@ -13,7 +13,7 @@ from ..integration.contracts import OwnFix
 from ..integration.varac_gps import OwnPositionReader
 
 log = logging.getLogger("varmap.own")
-DYNAMIC_SOURCES = ("gps_log", "nmea")
+DYNAMIC_SOURCES = ("gps_log", "nmea", "graywolf")
 
 
 class OwnPositionTracker(threading.Thread):
@@ -22,7 +22,8 @@ class OwnPositionTracker(threading.Thread):
         self.rt = rt
         self.cfg = rt.cfg
         self.repo = rt.repo
-        self.reader = OwnPositionReader(rt.vc, rt.cfg)
+        self.reader = OwnPositionReader(rt.vc, rt.cfg, graywolf_client_getter=lambda: rt.graywolf.client()
+                                        if (rt.cfg.get("graywolf") or {}).get("enabled") else None)
         self._stop = threading.Event()
         self._wake = threading.Event()
         self._lock = threading.Lock()
