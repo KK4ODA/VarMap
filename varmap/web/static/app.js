@@ -365,7 +365,7 @@
   function renderDetail(d) {
     const unl = d.lat == null;
     const acc = d.accuracy_m ? (d.accuracy_m >= 1000 ? `±${(d.accuracy_m / 1000).toFixed(0)} km` : `±${d.accuracy_m.toFixed(0)} m`) : "";
-    const srcName = { beacon: "advanced beacon", cq: "CQ frame", gps_tag: "VMail <GPS:> tag", broadcast_gps: "broadcast <GPS:>", broadcast_grid: "broadcast text (grid)", manual: "manual", aprs: "APRS via Graywolf" }[d.position_source] || d.position_source || "";
+    const srcName = { beacon: "VarAC advanced beacon (grid only)", cq: "VarAC CQ frame (grid only)", gps_tag: "VarAC VMail <GPS:> tag", broadcast_gps: "VarAC broadcast with <GPS:> (a Position TX)", broadcast_grid: "grid found in VarAC broadcast text", manual: "manual", aprs: "APRS via Graywolf" }[d.position_source] || d.position_source || "";
     const distinctGrids = new Set((d.positions || []).map((p) => p.grid).filter(Boolean)).size;
     const heard = (d.heard || []).map((h) => `<div class="heard-row"><span class="t">${ageStr(h.heard_at)}</span><span>${esc(h.frame_kind)}${h.had_position ? "" : " (no loc)"}</span><span>${esc(h.band || "")} ${h.snr_db ?? ""}</span><span class="txt">${esc(h.text || "")}</span></div>`).join("");
     $("detail").innerHTML = `
