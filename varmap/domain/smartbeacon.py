@@ -1,7 +1,7 @@
 """When to transmit our own position.  Pure policy: consumes timed fixes,
 emits decisions.  It never knows HOW a beacon is sent.
 
-Two policies share the same safety envelope (hard floor, keepalive):
+Two policies share the same safety envelope (hard floor, "only if moved"):
 
 FixedIntervalPolicy  - every N minutes, optionally only if we moved.
 SmartBeaconPolicy    - APRS-style SmartBeaconing adapted for VarAC:
@@ -10,11 +10,13 @@ SmartBeaconPolicy    - APRS-style SmartBeaconing adapted for VarAC:
     * grid-change trigger with dwell/edge hysteresis (the only event that
       changes an ADVANCED-BEACON payload, and a natural trigger for a
       broadcast too)
-    * minimum-move guard so a stationary station does not repeat itself
-    * keepalive at max_interval so silence still means something
+    * "only if moved" (default): a stationary station stays silent; switch it
+      off and it repeats its position at the slow rate instead
 
+There is deliberately no keepalive: if you are not moving, either you want
+silence (only_if_moved) or the plain schedule (interval / slow rate).
 The policy needs no speed or course to work: without them it degrades to
-"grid change / moved far enough / keepalive", which is most of the value.
+"grid change / moved far enough", which is most of the value.
 """
 from __future__ import annotations
 
@@ -56,7 +58,7 @@ class _Pending:
 
 DEFAULT_SMART = {
     "min_interval_seconds": 300,
-    "max_interval_seconds": 1800,
+    "only_if_moved": True,
     "slow_speed_kmh": 5.0,
     "slow_rate_seconds": 1800,
     "fast_speed_kmh": 90.0,
@@ -72,9 +74,8 @@ DEFAULT_SMART = {
 
 DEFAULT_FIXED = {
     "interval_seconds": 900,
-    "only_if_moved": False,
+    "only_if_moved": True,
     "min_move_m": 500.0,
-    "max_interval_seconds": 3600,   # keepalive when only_if_moved
 }
 
 
@@ -132,13 +133,7 @@ class FixedIntervalPolicy(_BasePolicy):
         if self.cfg.get("only_if_moved"):
             moved = self._moved_m(fix)
             if moved < float(self.cfg["min_move_m"]):
-                keep = float(self.cfg["max_interval_seconds"])
-                if keep <= 0:                       # 0 = no keepalive: a parked station stays silent
-                    return Decision(False, "not_moved", None)
-                keep = max(self.interval, keep)
-                if since >= keep:
-                    return Decision(True, "keepalive")
-                return Decision(False, "not_moved", keep - since)
+                return Decision(False, "not_moved", None)   # parked: silent until we move
             return Decision(True, "moved")
         return Decision(True, "fixed")
 
@@ -159,14 +154,11 @@ class SmartBeaconPolicy(_BasePolicy):
         return _floor(self.cfg["min_interval_seconds"])
 
     @property
-    def max_interval(self) -> float:
-        mi = float(self.cfg["max_interval_seconds"])
-        if mi <= 0:                                 # 0 = no keepalive
-            return float("inf")
-        return max(mi, self.min_interval)
+    def slow_rate(self) -> float:
+        return max(float(self.cfg["slow_rate_seconds"]), self.min_interval)
 
     def rate_for_speed(self, speed_kmh: Optional[float]) -> float:
-        """Classic SmartBeaconing interval, clamped into [min, max]."""
+        """Classic SmartBeaconing interval, clamped into [min_interval, slow_rate]."""
         c = self.cfg
         if speed_kmh is None or speed_kmh <= float(c["slow_speed_kmh"]):
             rate = float(c["slow_rate_seconds"])
@@ -174,7 +166,7 @@ class SmartBeaconPolicy(_BasePolicy):
             rate = float(c["fast_rate_seconds"])
         else:
             rate = float(c["fast_rate_seconds"]) * float(c["fast_speed_kmh"]) / speed_kmh
-        return min(max(rate, self.min_interval), self.max_interval)
+        return min(max(rate, self.min_interval), self.slow_rate)
 
     def grid_changed_stably(self, fix: Fix, now: datetime) -> bool:
         """True only once a NEW grid has been held for the dwell time and the
@@ -201,8 +193,6 @@ class SmartBeaconPolicy(_BasePolicy):
         grid_ok = self.grid_changed_stably(fix, now)
         if since < self.min_interval:
             return Decision(False, "floor", self.min_interval - since)
-        if since >= self.max_interval:
-            return Decision(True, "keepalive")
         if self.cfg.get("grid_change_triggers") and grid_ok:
             return Decision(True, "grid_change")
         moved = self._moved_m(fix)
@@ -219,9 +209,9 @@ class SmartBeaconPolicy(_BasePolicy):
             if turn >= threshold:
                 return Decision(True, "turn")
         if since >= rate:
-            if moved >= min_move:
+            if moved >= min_move or not self.cfg.get("only_if_moved", True):
                 return Decision(True, "rate")
-            return Decision(False, "not_moved", None if self.max_interval == float("inf") else self.max_interval - since)
+            return Decision(False, "not_moved", None)   # parked: silent until we move
         return Decision(False, "rate", rate - since)
 
 

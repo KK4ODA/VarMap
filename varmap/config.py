@@ -101,12 +101,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "max_fix_age_seconds": 900,       # never beacon a stale position
         "max_per_hour": 2,                # independent rate limiter (hard cap 6, see services/beacon.py)
         "cf_window_hz": 3000,             # +- window around a calling frequency that counts as "on it" (covers VarAC's slots)
-        "fixed": {"interval_seconds": 1800, "only_if_moved": True, "min_move_m": 500.0, "max_interval_seconds": 3600},
+        "fixed": {"interval_seconds": 1800, "only_if_moved": True, "min_move_m": 500.0},
         # Smart timing defaults follow HF APRS practice (VARA HF trackers): ~10 min while moving,
         # 60 min stationary, no corner pegging faster than the 10-minute floor.  See the VHF profile in the UI.
         "smart": {
             "profile": "hf",
-            "min_interval_seconds": 600, "max_interval_seconds": 3600,
+            "min_interval_seconds": 600, "only_if_moved": True,
             "slow_speed_kmh": 5.0, "slow_rate_seconds": 3600,
             "fast_speed_kmh": 90.0, "fast_rate_seconds": 600,
             "min_turn_time_seconds": 600, "turn_min_deg": 30.0, "turn_slope": 255.0,

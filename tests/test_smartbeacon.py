@@ -11,7 +11,7 @@ def at(s):
 
 
 def test_fixed_arms_then_waits_one_interval():
-    p = FixedIntervalPolicy({"interval_seconds": 600})
+    p = FixedIntervalPolicy({"interval_seconds": 600, "only_if_moved": False})
     f = Fix(33.85, -84.29, at(0))
     d = p.evaluate(f, at(0))
     assert not d.send and d.reason == "armed" and d.next_due_seconds == 600   # no beacon on enable
@@ -21,24 +21,28 @@ def test_fixed_arms_then_waits_one_interval():
 
 
 def test_smart_arms_then_waits():
-    p = SmartBeaconPolicy({"min_interval_seconds": 60, "max_interval_seconds": 900, "slow_rate_seconds": 900})
+    p = SmartBeaconPolicy({"min_interval_seconds": 60, "slow_rate_seconds": 900, "only_if_moved": False})
     f = Fix(33.85, -84.29, at(0), speed_kmh=0.0)
     d = p.evaluate(f, at(0))
     assert not d.send and d.reason == "armed"
     assert not p.evaluate(f, at(300), ).send
-    assert p.evaluate(f, at(900)).reason == "keepalive"
+    assert p.evaluate(f, at(900)).reason == "rate"
 
 
-def test_fixed_only_if_moved_keepalive():
-    p = FixedIntervalPolicy({"interval_seconds": 300, "only_if_moved": True, "min_move_m": 500,
-                             "max_interval_seconds": 1800})
+def test_fixed_only_if_moved_stays_silent():
+    p = FixedIntervalPolicy({"interval_seconds": 300, "only_if_moved": True, "min_move_m": 500})
     f = Fix(33.85, -84.29, at(0))
     p.mark_sent(f, at(0))
     assert p.evaluate(f, at(600)).reason == "not_moved"
     moved = Fix(33.86, -84.29, at(700))   # ~1.1 km north
     assert p.evaluate(moved, at(700)).reason == "moved"
     p.mark_sent(moved, at(700))
-    assert p.evaluate(moved, at(700 + 1800)).reason == "keepalive"
+    for s in (1800, 36000, 360000):       # parked forever: never a keepalive
+        d = p.evaluate(moved, at(700 + s))
+        assert not d.send and d.reason == "not_moved" and d.next_due_seconds is None
+    p2 = FixedIntervalPolicy({"interval_seconds": 300, "only_if_moved": False})
+    p2.mark_sent(f, at(0))
+    assert p2.evaluate(f, at(300)).reason == "fixed"
 
 
 def test_hard_floor_cannot_be_lowered():
@@ -49,13 +53,16 @@ def test_hard_floor_cannot_be_lowered():
     assert not d.send and d.reason == "floor"
 
 
-def test_smart_stationary_only_keepalive():
-    p = SmartBeaconPolicy({"min_interval_seconds": 60, "max_interval_seconds": 1800})
+def test_smart_stationary_silent_unless_only_if_moved_off():
+    p = SmartBeaconPolicy({"min_interval_seconds": 60, "slow_rate_seconds": 1800})
     p.mark_sent(Fix(33.85, -84.29, at(0), speed_kmh=0.0), at(0))
-    for s in (120, 600, 1500):
+    for s in (120, 600, 1500, 1800, 36000):
         d = p.evaluate(Fix(33.85, -84.29, at(s), speed_kmh=0.0), at(s))
         assert not d.send, (s, d)
-    assert p.evaluate(Fix(33.85, -84.29, at(1800), speed_kmh=0.0), at(1800)).reason == "keepalive"
+    p2 = SmartBeaconPolicy({"min_interval_seconds": 60, "slow_rate_seconds": 1800, "only_if_moved": False})
+    p2.mark_sent(Fix(33.85, -84.29, at(0), speed_kmh=0.0), at(0))
+    assert not p2.evaluate(Fix(33.85, -84.29, at(1500), speed_kmh=0.0), at(1500)).send
+    assert p2.evaluate(Fix(33.85, -84.29, at(1800), speed_kmh=0.0), at(1800)).reason == "rate"
 
 
 def test_smart_rate_scales_with_speed():
@@ -90,7 +97,7 @@ def test_smart_corner_peg():
 
 def test_smart_grid_change_with_hysteresis():
     p = SmartBeaconPolicy({"min_interval_seconds": 60, "grid_dwell_seconds": 90, "grid_edge_margin_m": 300,
-                           "max_interval_seconds": 3600, "slow_rate_seconds": 3600})
+                           "slow_rate_seconds": 3600})
     lat, lon = grid_to_latlon("EM73UU")
     p.mark_sent(Fix(lat, lon, at(0), speed_kmh=0), at(0))
     n_edge = lat + (1 / 48)
@@ -106,7 +113,7 @@ def test_smart_grid_change_with_hysteresis():
 
 def test_smart_grid_change_requires_dwell():
     p = SmartBeaconPolicy({"min_interval_seconds": 60, "grid_dwell_seconds": 90, "grid_edge_margin_m": 300,
-                           "max_interval_seconds": 3600, "slow_rate_seconds": 3600})
+                           "slow_rate_seconds": 3600})
     lat, lon = grid_to_latlon("EM73UU")
     p.mark_sent(Fix(lat, lon, at(0), speed_kmh=0), at(0))
     deep = Fix(lat + (1 / 48) + 0.01, lon, at(100), speed_kmh=0)
@@ -116,9 +123,11 @@ def test_smart_grid_change_requires_dwell():
 
 
 def test_smart_no_speed_degrades_gracefully():
-    p = SmartBeaconPolicy({"min_interval_seconds": 60, "max_interval_seconds": 900, "slow_rate_seconds": 900,
+    p = SmartBeaconPolicy({"min_interval_seconds": 60, "slow_rate_seconds": 900,
                            "min_move_m": 500, "grid_change_triggers": False})
     p.mark_sent(Fix(33.85, -84.29, at(0)), at(0))
-    assert not p.evaluate(Fix(33.90, -84.29, at(300)), at(300)).send
+    assert not p.evaluate(Fix(33.90, -84.29, at(300)), at(300)).send   # moved 5.5 km but slow rate not reached
     d = p.evaluate(Fix(33.90, -84.29, at(900)), at(900))
-    assert d.send and d.reason == "keepalive"
+    assert d.send and d.reason == "rate"
+    p.mark_sent(Fix(33.90, -84.29, at(900)), at(900))
+    assert not p.evaluate(Fix(33.90, -84.29, at(9000)), at(9000)).send   # parked again: silent

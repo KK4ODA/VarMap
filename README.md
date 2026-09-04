@@ -137,9 +137,10 @@ preferred band and re-checks the band right before the final click, because VarA
 broadcast until the channel is clear and a late start would go out on the next band. The
 frequency VarAC really transmitted on is read back from `VarAC.log` and shown in the TX log.
 
-**A parked station can be silent.** "Only if moved" skips broadcasts while you sit still; the
-keepalive repeats your position anyway every N seconds (minimum 30 min). Set the keepalive to
-`0` and a stationary station sends nothing at all until it moves.
+**A parked station is silent.** "Only if moved" (on by default in both timing modes) means a
+station that has not moved since its last broadcast sends nothing at all. Switch it off and the
+plain schedule applies: every interval in fixed mode, the slow rate in smart mode. There is no
+separate keepalive.
 
 VarMap also holds off while VarAC is busy: it reads VarAC's button states and
 will not hand over a broadcast while VarAC is connected to a station (QSO,
@@ -156,7 +157,7 @@ protection off.
 
 Timing: fixed interval (only when moved by default) or smart timing
 (speed-scaled interval, corner pegging, grid-change trigger with dwell
-hysteresis, keepalive). Interlocks that no setting can override: callsign
+hysteresis, only-if-moved). Interlocks that no setting can override: callsign
 required, no fix → no transmit, fix-age limit, per-hour and per-day limits, 5-minute
 spacing, VarAC must be running, everything logged. **Stop auto position TX** is the
 kill switch; **Test VarAC dialog (no TX)** rehearses the automation without sending. GUI automation briefly steals focus and needs VarAC's interface

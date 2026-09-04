@@ -8,21 +8,21 @@ def test_intervals_are_floored():
                                         "max_interval_seconds": 90, "min_move_m": 1, "min_turn_time_seconds": 5},
                               "max_per_hour": 500})
     assert bc["fixed"]["interval_seconds"] == LIMITS["min_interval_seconds"]
-    assert bc["fixed"]["max_interval_seconds"] == LIMITS["min_keepalive_seconds"]
+    assert "max_interval_seconds" not in bc["fixed"] and "max_interval_seconds" not in bc["smart"]   # keepalive gone
+    assert bc["fixed"]["only_if_moved"] is True and bc["smart"]["only_if_moved"] is True          # default on
     assert bc["fixed"]["min_move_m"] == LIMITS["min_move_m"]
     assert bc["smart"]["min_interval_seconds"] == LIMITS["min_interval_seconds"]
     assert bc["smart"]["fast_rate_seconds"] == LIMITS["min_interval_seconds"]
-    assert bc["smart"]["slow_rate_seconds"] == LIMITS["min_keepalive_seconds"]
-    assert bc["smart"]["max_interval_seconds"] == LIMITS["min_keepalive_seconds"]
+    assert bc["smart"]["slow_rate_seconds"] == LIMITS["min_stationary_seconds"]
     assert bc["smart"]["min_turn_time_seconds"] == LIMITS["min_interval_seconds"]
     assert bc["max_per_hour"] == LIMITS["max_per_hour"] == 6
     assert bc["max_per_day"] == LIMITS["max_per_day"]
 
 
 def test_sane_values_untouched():
-    bc = clamp_beacon_config({"fixed": {"interval_seconds": 900, "max_interval_seconds": 3600, "min_move_m": 500},
+    bc = clamp_beacon_config({"fixed": {"interval_seconds": 900, "min_move_m": 500},
                               "smart": {"min_interval_seconds": 300, "fast_rate_seconds": 300, "slow_rate_seconds": 1800,
-                                        "max_interval_seconds": 3600, "min_move_m": 500, "min_turn_time_seconds": 300},
+                                        "min_move_m": 500, "min_turn_time_seconds": 300},
                               "max_per_hour": 2})
     assert bc["fixed"]["interval_seconds"] == 900 and bc["smart"]["fast_rate_seconds"] == 300 and bc["max_per_hour"] == 2
 
@@ -30,7 +30,7 @@ def test_sane_values_untouched():
 def test_defaults_are_within_limits():
     from varmap.config import DEFAULT_CONFIG
     d = DEFAULT_CONFIG["beacon"]
-    assert d["fixed"]["only_if_moved"] is True
+    assert d["fixed"]["only_if_moved"] is True and d["smart"]["only_if_moved"] is True
     assert d["max_per_hour"] == 2 <= LIMITS["max_per_hour"]
     c = clamp_beacon_config(d)
     assert c["fixed"]["interval_seconds"] == d["fixed"]["interval_seconds"]      # HF defaults need no clamping

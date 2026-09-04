@@ -33,6 +33,7 @@ def _service(tmp, preferred, dry=True):
     cfg = Config(os.path.join(tmp, "config.json"))
     cfg.update({"data_dir": tmp, "own_station": {"callsign": "KK4ODA"},
                 "beacon": {"enabled": True, "dry_run": dry, "mode": "fixed", "preferred_bands": preferred,
+                           "fixed": {"only_if_moved": False},
                            "band_wait_max_seconds": 60}}, save=False)
     repo = Repository(os.path.join(tmp, "t.db"))
     fix = OwnFix(lat=33.86, lon=-84.30, time=datetime.now(timezone.utc), source="gps_log", grid="EM73UU")
@@ -55,7 +56,7 @@ def test_automatic_send_holds_until_preferred_band():
     vc.hz = 7105000                                 # scanner lands on 40m
     svc.tick()
     rows = repo.beacon_tx_recent(1)
-    assert rows and rows[0]["ok"] == 1 and rows[0]["trigger"] in ("fixed", "keepalive", "moved")
+    assert rows and rows[0]["ok"] == 1 and rows[0]["trigger"] in ("fixed", "moved")
     assert svc.snapshot()["holding_for_band"] is None
 
 

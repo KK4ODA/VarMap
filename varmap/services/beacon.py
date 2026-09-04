@@ -40,7 +40,7 @@ VERIFY_TX_SECONDS = 40.0            # how long to wait for VarAC.log to show the
 LIMITS = {
     "min_interval_seconds": 300,       # automatic transmissions: never closer than 5 min
     "manual_min_spacing_seconds": 60,  # manual buttons (Send once now, Relay to VarAC): 60 s, guards against double clicks
-    "min_keepalive_seconds": 1800,     # a station that has not moved repeats itself at most every 30 min
+    "min_stationary_seconds": 1800,    # slow rate: a station that is not moving repeats itself at most every 30 min
     "min_move_m": 100.0,               # "moved" means at least 100 m
     "max_per_hour": 6,                 # absolute hourly cap (config default 2)
     "max_per_day": 48,                 # absolute daily cap
@@ -54,14 +54,14 @@ def clamp_beacon_config(bc: Dict[str, Any]) -> Dict[str, Any]:
     f = out.setdefault("fixed", {})
     f["interval_seconds"] = max(float(f.get("interval_seconds", 900)), L["min_interval_seconds"])
     f["min_move_m"] = max(float(f.get("min_move_m", 500)), L["min_move_m"])
-    ka = float(f.get("max_interval_seconds", 3600))
-    f["max_interval_seconds"] = 0.0 if ka <= 0 else max(ka, L["min_keepalive_seconds"], f["interval_seconds"])
+    f.pop("max_interval_seconds", None)          # keepalive removed in 0.3.10
+    f.setdefault("only_if_moved", True)
     s = out.setdefault("smart", {})
+    s.pop("max_interval_seconds", None)
+    s.setdefault("only_if_moved", True)
     s["min_interval_seconds"] = max(float(s.get("min_interval_seconds", 300)), L["min_interval_seconds"])
     s["fast_rate_seconds"] = max(float(s.get("fast_rate_seconds", 300)), s["min_interval_seconds"])
-    s["slow_rate_seconds"] = max(float(s.get("slow_rate_seconds", 1800)), L["min_keepalive_seconds"])
-    sk = float(s.get("max_interval_seconds", 3600))
-    s["max_interval_seconds"] = 0.0 if sk <= 0 else max(sk, L["min_keepalive_seconds"])
+    s["slow_rate_seconds"] = max(float(s.get("slow_rate_seconds", 1800)), L["min_stationary_seconds"])
     s["min_move_m"] = max(float(s.get("min_move_m", 500)), L["min_move_m"])
     s["min_turn_time_seconds"] = max(float(s.get("min_turn_time_seconds", 60)), L["min_interval_seconds"])
     out["max_per_hour"] = int(min(max(int(out.get("max_per_hour", 2)), 1), L["max_per_hour"]))

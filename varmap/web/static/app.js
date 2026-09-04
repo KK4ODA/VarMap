@@ -647,7 +647,7 @@
       `VarAC activity: ${b.varac_activity ? (b.varac_activity.busy === true ? "BUSY - " + b.varac_activity.reason : b.varac_activity.busy === false ? "free (not connected, Broadcast window closed)" : b.varac_activity.reason || "unknown") : "not checked yet"}`,
       `VarAC Ignore DCD box: ${b.ignore_dcd === true ? "TICKED - busy-channel protection OFF" : b.ignore_dcd === false ? "not ticked (VarAC waits for a clear channel)" : "unknown (VarAC not running or not checked yet)"}`,
       `Transmissions last hour: ${b.tx_last_hour} (limit ${b.effective ? b.effective.max_per_hour : "?"}/h, ${b.limits ? b.limits.max_per_day : "?"}/day)`,
-      b.effective ? `Effective timing after built-in limits: fixed ${b.effective.fixed.interval_seconds} s${b.effective.fixed.only_if_moved ? " only if moved, keepalive " + b.effective.fixed.max_interval_seconds + " s" : ""} · smart min ${b.effective.smart.min_interval_seconds} s / keepalive ${b.effective.smart.max_interval_seconds} s` : "",
+      b.effective ? `Effective timing after built-in limits: fixed ${b.effective.fixed.interval_seconds} s${b.effective.fixed.only_if_moved ? " only if moved" : ""} · smart min ${b.effective.smart.min_interval_seconds} s / slow ${b.effective.smart.slow_rate_seconds} s${b.effective.smart.only_if_moved ? " only if moved" : ""}` : "",
       b.last_tx ? `Last: ${b.last_tx.requested_at} ${b.last_tx.trigger} ${b.last_tx.ok ? "OK" : "FAILED " + (b.last_tx.error || "")}${b.last_tx.dry_run ? " (dry)" : ""}` : "Last: —"];
     $("beacon-status").textContent = lines.filter(Boolean).join("\n");
     $("btn-cancel-pending").classList.toggle("hidden", !b.pending);
@@ -662,9 +662,9 @@
   $("btn-beacon-off").onclick = async () => { await api("/api/beacon/enable", { enabled: false }); refreshBeaconPane(); refreshHealth(); };
   // Smart timing profiles.  HF mirrors VARA HF / HF APRS tracker practice; VHF is for VARA FM.
   const SMART_PROFILES = {
-    hf: { min_interval_seconds: 600, max_interval_seconds: 3600, slow_speed_kmh: 5, slow_rate_seconds: 3600, fast_speed_kmh: 90,
+    hf: { min_interval_seconds: 600, slow_speed_kmh: 5, slow_rate_seconds: 3600, fast_speed_kmh: 90,
           fast_rate_seconds: 600, min_turn_time_seconds: 600, turn_min_deg: 30, turn_slope: 255, min_move_m: 1000, grid_dwell_seconds: 120 },
-    vhf: { min_interval_seconds: 300, max_interval_seconds: 1800, slow_speed_kmh: 5, slow_rate_seconds: 1800, fast_speed_kmh: 90,
+    vhf: { min_interval_seconds: 300, slow_speed_kmh: 5, slow_rate_seconds: 1800, fast_speed_kmh: 90,
            fast_rate_seconds: 300, min_turn_time_seconds: 300, turn_min_deg: 30, turn_slope: 255, min_move_m: 500, grid_dwell_seconds: 90 },
   };
   function applySmartProfile(name) {
@@ -676,9 +676,9 @@
     if (el.id === "smart-profile" || el.type === "checkbox") return;
     el.addEventListener("input", () => { $("smart-profile").value = "custom"; });
   });
-  document.querySelector('[data-cfg="beacon.fixed.only_if_moved"]').addEventListener("change", (e) => {
+  document.querySelectorAll('[data-cfg="beacon.fixed.only_if_moved"], [data-cfg="beacon.smart.only_if_moved"]').forEach((el) => el.addEventListener("change", (e) => {
     if (!e.target.checked && !confirm("Switch off 'Only if moved'?\n\nA station that is not moving would then repeat the same position every interval on a shared calling frequency. VarMap will still enforce at least 5 minutes between transmissions and the hourly limit, but 'Only if moved' is the polite setting.\n\nOK = switch it off anyway, Cancel = keep it on.")) e.target.checked = true;
-  });
+  }));
   $("btn-rehearse").onclick = async () => {
     await api("/api/config", collectConfig());
     $("beacon-status").textContent = "Rehearsing: opening VarAC's broadcast dialog (it will steal focus for a moment)…";

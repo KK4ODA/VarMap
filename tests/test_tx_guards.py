@@ -1,4 +1,4 @@
-"""Guards added after the 2026-09-04 log review: no keepalive option, scanner-stop send
+"""Guards added after the 2026-09-04 log review: parked stations stay silent, scanner-stop send
 window, pre-click band re-check, session-lock hold, exponential retry backoff, and the
 real TX frequency taken from VarAC.log."""
 import os
@@ -21,8 +21,8 @@ def at(s):
     return T0 + timedelta(seconds=s)
 
 
-def test_keepalive_zero_means_never_fixed():
-    p = FixedIntervalPolicy({"interval_seconds": 600, "only_if_moved": True, "min_move_m": 500, "max_interval_seconds": 0})
+def test_parked_station_is_silent_fixed():
+    p = FixedIntervalPolicy({"interval_seconds": 600, "only_if_moved": True, "min_move_m": 500})
     f = Fix(33.85, -84.29, at(0))
     p.evaluate(f, at(0))                                  # arm
     for s in (600, 3600, 36000, 360000):
@@ -31,20 +31,18 @@ def test_keepalive_zero_means_never_fixed():
     assert p.evaluate(Fix(33.86, -84.29, at(700)), at(700)).send   # moved: sends
 
 
-def test_keepalive_zero_means_never_smart():
-    p = SmartBeaconPolicy({"min_interval_seconds": 300, "max_interval_seconds": 0, "slow_rate_seconds": 1800,
-                           "min_move_m": 500})
+def test_parked_station_is_silent_smart():
+    p = SmartBeaconPolicy({"min_interval_seconds": 300, "slow_rate_seconds": 1800, "min_move_m": 500})
     f = Fix(33.85, -84.29, at(0), speed_kmh=0.0)
     p.evaluate(f, at(0))
     for s in (1800, 36000, 360000):
         assert not p.evaluate(f, at(s)).send
 
 
-def test_clamp_keeps_zero_keepalive():
+def test_clamp_drops_legacy_keepalive_and_defaults_only_if_moved():
     bc = clamp_beacon_config({"fixed": {"max_interval_seconds": 0}, "smart": {"max_interval_seconds": 0}})
-    assert bc["fixed"]["max_interval_seconds"] == 0 and bc["smart"]["max_interval_seconds"] == 0
-    bc = clamp_beacon_config({"fixed": {"max_interval_seconds": 60}})
-    assert bc["fixed"]["max_interval_seconds"] == 1800          # non-zero still floored
+    assert "max_interval_seconds" not in bc["fixed"] and "max_interval_seconds" not in bc["smart"]
+    assert bc["fixed"]["only_if_moved"] is True and bc["smart"]["only_if_moved"] is True
 
 
 class _VC:
