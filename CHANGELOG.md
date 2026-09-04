@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.8 (2026-09-04)
+
+- Softer, muted red for stale dots and cluster badges so they no longer dominate the map.
+
 ## 0.3.7 (2026-09-03)
 
 - Cluster badges now use the same age colours as the dots (yellow = freshest member is recent, red = stale). They were still blue/orange.

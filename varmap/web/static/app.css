@@ -1,7 +1,7 @@
 :root {
   --bg: #f4f5f7; --panel: #ffffff; --ink: #1f2933; --muted: #6b7280; --line: #d9dde3;
   --accent: #1e88e5; --fresh: #2e7d32; --recent: #1976d2; --stale: #f9a825; --old: #9e9e9e;
-  --age-fresh: #2e7d32; --age-recent: #fff176; --age-recent-line: #f9a825; --age-stale: #e53935; --age-stale-line: #ef9a9a; --age-old-line: #9e9e9e; --own: #d81b60;
+  --age-fresh: #2e7d32; --age-recent: #fff176; --age-recent-line: #f9a825; --age-stale: #cf7f7a; --age-stale-line: #ebbfbb; --age-old-line: #9e9e9e; --own: #d81b60;
   --danger: #c62828; --ok: #2e7d32; --warn: #ef6c00;
   font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif; font-size: 13px; color: var(--ink);
 }
@@ -145,7 +145,7 @@ i.dot.aprs { border-radius: 2px; transform: rotate(45deg); }
 .marker-cluster div { font-weight: 700; }
 .marker-cluster.c-fresh { background: rgba(46,125,50,.35); } .marker-cluster.c-fresh div { background: rgba(46,125,50,.85); color: #fff; }
 .marker-cluster.c-recent { background: rgba(249,168,37,.3); } .marker-cluster.c-recent div { background: rgba(255,241,118,.95); color: #222; box-shadow: inset 0 0 0 2px var(--age-recent-line); }
-.marker-cluster.c-stale { background: rgba(239,154,154,.4); } .marker-cluster.c-stale div { background: rgba(229,57,53,.85); color: #fff; }
+.marker-cluster.c-stale { background: rgba(235,191,187,.4); } .marker-cluster.c-stale div { background: rgba(207,127,122,.85); color: #fff; }
 .marker-cluster.c-old { background: rgba(158,158,158,.3); } .marker-cluster.c-old div { background: rgba(158,158,158,.85); color: #fff; }
 .track-pt { width: 0 !important; height: 0 !important; }
 .track-pt .p { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 1.5px solid #fff; }
