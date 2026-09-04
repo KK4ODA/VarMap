@@ -189,6 +189,34 @@ class VaracConfig:
                 pass
         return self.last_frequency_hz()
 
+    def tx_frequency_for(self, message: str, tail_bytes: int = 65536) -> Optional[int]:
+        """The frequency VarAC was actually on when it transmitted `message`: VarAC.log's
+        'Sending Async message: ... DATA:<message>' line, and the last 'Changing frequency'
+        before it.  None until VarAC has logged the transmission (it queues broadcasts
+        until the channel is clear, so this can lag the dialog by several seconds)."""
+        d = self.varac_dir()
+        p = os.path.join(d, "VarAC.log") if d else None
+        msg = (message or "").strip()
+        if not p or not msg or not os.path.isfile(p):
+            return None
+        try:
+            size = os.path.getsize(p)
+            with open(p, "rb") as f:
+                f.seek(max(0, size - tail_bytes))
+                tail = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            return None
+        idx = tail.rfind("Sending Async message")
+        while idx != -1:
+            end = tail.find("\n", idx)
+            line = tail[idx:end if end != -1 else None]
+            if msg in line:
+                hits = self._FREQ_LOG_RE.findall(tail[:idx])
+                hz = parse_dotted_frequency(hits[-1]) if hits else None
+                return hz if hz and hz > 100_000 else None
+            idx = tail.rfind("Sending Async message", 0, idx)
+        return None
+
     def beacon_settings(self) -> Dict[str, Any]:
         return {
             "interval_minutes": int(self.value("BEACON", "BeaconIntervalMinutes", "15") or 15),

@@ -132,7 +132,10 @@ class FixedIntervalPolicy(_BasePolicy):
         if self.cfg.get("only_if_moved"):
             moved = self._moved_m(fix)
             if moved < float(self.cfg["min_move_m"]):
-                keep = max(self.interval, float(self.cfg["max_interval_seconds"]))
+                keep = float(self.cfg["max_interval_seconds"])
+                if keep <= 0:                       # 0 = no keepalive: a parked station stays silent
+                    return Decision(False, "not_moved", None)
+                keep = max(self.interval, keep)
                 if since >= keep:
                     return Decision(True, "keepalive")
                 return Decision(False, "not_moved", keep - since)
@@ -157,7 +160,10 @@ class SmartBeaconPolicy(_BasePolicy):
 
     @property
     def max_interval(self) -> float:
-        return max(float(self.cfg["max_interval_seconds"]), self.min_interval)
+        mi = float(self.cfg["max_interval_seconds"])
+        if mi <= 0:                                 # 0 = no keepalive
+            return float("inf")
+        return max(mi, self.min_interval)
 
     def rate_for_speed(self, speed_kmh: Optional[float]) -> float:
         """Classic SmartBeaconing interval, clamped into [min, max]."""
@@ -215,7 +221,7 @@ class SmartBeaconPolicy(_BasePolicy):
         if since >= rate:
             if moved >= min_move:
                 return Decision(True, "rate")
-            return Decision(False, "not_moved", self.max_interval - since)
+            return Decision(False, "not_moved", None if self.max_interval == float("inf") else self.max_interval - since)
         return Decision(False, "rate", rate - since)
 
 

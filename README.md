@@ -132,6 +132,14 @@ out on whatever band the scanner is on at that moment. List the bands you want i
 Position TX (e.g. `40m, 20m`) and VarMap holds every broadcast, automatic or manual,
 until VarAC lands on one of them (it reads VarAC's current frequency from `VarAC.log`).
 A queued manual send gives up after a configurable wait and can be cancelled.
+When the scanner is hopping, VarMap starts a send only in the first seconds of a stop on a
+preferred band and re-checks the band right before the final click, because VarAC queues the
+broadcast until the channel is clear and a late start would go out on the next band. The
+frequency VarAC really transmitted on is read back from `VarAC.log` and shown in the TX log.
+
+**A parked station can be silent.** "Only if moved" skips broadcasts while you sit still; the
+keepalive repeats your position anyway every N seconds (minimum 30 min). Set the keepalive to
+`0` and a stationary station sends nothing at all until it moves.
 
 VarMap also holds off while VarAC is busy: it reads VarAC's button states and
 will not hand over a broadcast while VarAC is connected to a station (QSO,

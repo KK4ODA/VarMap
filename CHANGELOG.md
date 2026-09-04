@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.9 (2026-09-04)
+
+- Keepalive can be switched off (0 = never): a stationary station with "only if moved" then stays silent.
+- Preferred bands: with the scanner hopping, sends start only in the first seconds of a stop on a preferred band, and the band is re-checked right before the final click (an abort is not counted as a failure). The frequency VarAC actually transmitted on is read back from VarAC.log into the TX log.
+- Position TX no longer retries a failing VarAC hand-over every 2 minutes: backoff doubles per failure up to 30 min, and while the Windows session is locked no attempt is made at all.
+- Every change of "why Position TX is holding" is now written to varmap.log, and the UI warns if the Position TX thread stops ticking.
+- All cross-process window calls into VarAC use timeouts so a wedged VarAC UI can never freeze VarMap's TX thread.
+
 ## 0.3.8 (2026-09-04)
 
 - Softer, muted red for stale dots and cluster badges so they no longer dominate the map.

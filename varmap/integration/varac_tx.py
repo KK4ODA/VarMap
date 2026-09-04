@@ -41,6 +41,8 @@ WM_LBUTTONUP = 0x0202
 WM_RBUTTONDOWN = 0x0204
 WM_RBUTTONUP = 0x0205
 BM_CLICK = 0x00F5
+SMTO_ABORTIFHUNG = 0x0002
+SEND_TIMEOUT_MS = 2000
 MK_LBUTTON = 0x0001
 MK_RBUTTON = 0x0002
 
@@ -64,6 +66,39 @@ def _win32():
         return win32gui, ctypes.windll.user32
     except ImportError:
         return None, None
+
+
+def _send(hwnd, msg: int, wparam: int = 0, lparam=0, timeout_ms: int = SEND_TIMEOUT_MS) -> Optional[int]:
+    """SendMessage with a timeout.  A plain SendMessage blocks until the target thread
+    answers; if VarAC's UI thread ever hangs, that would freeze VarMap's Position TX
+    thread for good.  Returns None on timeout/failure."""
+    import ctypes
+    res = ctypes.c_size_t(0)
+    lp = ctypes.c_ssize_t(lparam) if isinstance(lparam, int) else lparam
+    try:
+        ok = ctypes.windll.user32.SendMessageTimeoutW(
+            ctypes.c_void_p(hwnd), ctypes.c_uint(msg), ctypes.c_size_t(wparam), lp,
+            ctypes.c_uint(SMTO_ABORTIFHUNG), ctypes.c_uint(timeout_ms), ctypes.byref(res))
+    except Exception:
+        return None
+    return int(res.value) if ok else None
+
+
+def session_locked() -> bool:
+    """True when the Windows console session is locked.  GUI automation cannot
+    open or type into VarAC's windows then (input goes to the secure desktop)."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        DESKTOP_READOBJECTS = 0x0001
+        h = ctypes.windll.user32.OpenInputDesktop(0, False, DESKTOP_READOBJECTS)
+        if not h:
+            return True
+        ctypes.windll.user32.CloseDesktop(h)
+        return False
+    except Exception:
+        return False
 
 
 def find_window_by_title(pattern: str):
@@ -232,10 +267,8 @@ def ignore_dcd_state() -> Optional[bool]:
             pass
     if not best:
         return None
-    try:
-        return bool(win32gui.SendMessage(best[1], BM_GETCHECK, 0, 0) & 1)
-    except Exception:
-        return None
+    r = _send(best[1], BM_GETCHECK)
+    return None if r is None else bool(r & 1)
 
 
 def dump_windows() -> Dict[str, Any]:
@@ -274,7 +307,7 @@ def _open_dialog(win32gui, user32) -> Tuple[Optional[int], str]:
     _post_click(win32gui, user32, btn)                       # works on V15.0.18
     d = _wait_window(DIALOG_TITLE_RE, 4.0)
     if not d:
-        win32gui.SendMessage(btn, BM_CLICK, 0, 0)            # older builds
+        _send(btn, BM_CLICK)                                 # older builds
         d = _wait_window(DIALOG_TITLE_RE, 4.0)
     if not d:
         return None, "Broadcast dialog did not open"
@@ -344,12 +377,14 @@ def _type_message(win32gui, user32, dialog, msg_hwnd, text: str) -> None:
     user32.mouse_event(4, 0, 0, 0, 0)  # LEFTUP
     time.sleep(0.2)
     for ch in text:
-        user32.SendMessageW(msg_hwnd, WM_CHAR, ord(ch), 0)
+        _send(msg_hwnd, WM_CHAR, ord(ch), 0, 1000)
     time.sleep(0.3)
 
 
-def _drive_broadcast(message: str, to: str, send: bool) -> Dict[str, Any]:
-    """Shared by send_broadcast (send=True) and rehearse_broadcast (send=False)."""
+def _drive_broadcast(message: str, to: str, send: bool, precheck=None) -> Dict[str, Any]:
+    """Shared by send_broadcast (send=True) and rehearse_broadcast (send=False).
+    `precheck()` runs right before the final BROADCAST click; if it returns a reason the
+    dialog is closed and nothing is sent (used for the preferred-band re-check)."""
     result: Dict[str, Any] = {"ok": False, "error": "", "typed_bytes": None, "sent": False}
     if sys.platform != "win32":
         result["error"] = "VarAC GUI automation is Windows-only"
@@ -375,13 +410,14 @@ def _drive_broadcast(message: str, to: str, send: bool) -> Dict[str, Any]:
         if c:
             _post_click(win32gui, user32, c)
             if not _wait_gone(dialog, 2.0):
-                win32gui.SendMessage(c, BM_CLICK, 0, 0)
+                _send(c, BM_CLICK)
 
     try:
         ctl = _dialog_controls(win32gui, dialog)
         result["controls"] = {k: bool(v) for k, v in ctl.items()}
         if ctl["to_edit"]:
-            user32.SendMessageW(ctl["to_edit"], WM_SETTEXT, 0, to)
+            import ctypes
+            _send(ctl["to_edit"], WM_SETTEXT, 0, ctypes.c_wchar_p(to))
         else:
             log.warning("Broadcast: TO field not found; VarAC's default recipient will be used")
         if not ctl["msg"]:
@@ -411,9 +447,15 @@ def _drive_broadcast(message: str, to: str, send: bool) -> Dict[str, Any]:
             close_dialog()
             result["error"] = "BROADCAST button not found in dialog"
             return result
+        if precheck is not None:
+            why = precheck()
+            if why:
+                close_dialog()
+                result["error"] = f"aborted before sending: {why}"
+                return result
         _post_click(win32gui, user32, btn)
         if not _wait_gone(dialog, 3.0):
-            win32gui.SendMessage(btn, BM_CLICK, 0, 0)
+            _send(btn, BM_CLICK)
             if not _wait_gone(dialog, 3.0):
                 # A 'too long' or similar message box may be up; do not leave the dialog open.
                 close_dialog()
@@ -429,9 +471,9 @@ def _drive_broadcast(message: str, to: str, send: bool) -> Dict[str, Any]:
         return result
 
 
-def send_broadcast(message: str, to: str = "ALL") -> Tuple[bool, str]:
+def send_broadcast(message: str, to: str = "ALL", precheck=None) -> Tuple[bool, str]:
     """Open VarAC's Broadcast dialog, fill it, click BROADCAST AND CLOSE.  Returns (ok, error)."""
-    r = _drive_broadcast(message, to, send=True)
+    r = _drive_broadcast(message, to, send=True, precheck=precheck)
     return bool(r["ok"]), r.get("error", "")
 
 

@@ -12,8 +12,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import statistics
 import threading
 import time
+from collections import deque
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
@@ -26,7 +29,10 @@ from ..integration.contracts import OwnFix
 
 log = logging.getLogger("varmap.beacon")
 TICK_SECONDS = 2.0
-FAIL_BACKOFF_SECONDS = 120.0   # after a failed hand-over to VarAC, do not try again sooner than this
+FAIL_BACKOFF_SECONDS = 120.0   # first retry after a failed hand-over to VarAC; doubles per failure
+FAIL_BACKOFF_MAX_SECONDS = 1800.0
+SCANNER_DWELL_MAX_SECONDS = 600.0   # a frequency held longer than this is a QSY, not a scanner stop
+VERIFY_TX_SECONDS = 40.0            # how long to wait for VarAC.log to show the real TX frequency
 
 # Anti-spam limits that NO configuration can relax.  VarAC broadcasts go out on
 # shared calling frequencies; a position beacon every few minutes from a parked
@@ -48,13 +54,14 @@ def clamp_beacon_config(bc: Dict[str, Any]) -> Dict[str, Any]:
     f = out.setdefault("fixed", {})
     f["interval_seconds"] = max(float(f.get("interval_seconds", 900)), L["min_interval_seconds"])
     f["min_move_m"] = max(float(f.get("min_move_m", 500)), L["min_move_m"])
-    f["max_interval_seconds"] = max(float(f.get("max_interval_seconds", 3600)), L["min_keepalive_seconds"],
-                                    f["interval_seconds"])
+    ka = float(f.get("max_interval_seconds", 3600))
+    f["max_interval_seconds"] = 0.0 if ka <= 0 else max(ka, L["min_keepalive_seconds"], f["interval_seconds"])
     s = out.setdefault("smart", {})
     s["min_interval_seconds"] = max(float(s.get("min_interval_seconds", 300)), L["min_interval_seconds"])
     s["fast_rate_seconds"] = max(float(s.get("fast_rate_seconds", 300)), s["min_interval_seconds"])
     s["slow_rate_seconds"] = max(float(s.get("slow_rate_seconds", 1800)), L["min_keepalive_seconds"])
-    s["max_interval_seconds"] = max(float(s.get("max_interval_seconds", 3600)), L["min_keepalive_seconds"])
+    sk = float(s.get("max_interval_seconds", 3600))
+    s["max_interval_seconds"] = 0.0 if sk <= 0 else max(sk, L["min_keepalive_seconds"])
     s["min_move_m"] = max(float(s.get("min_move_m", 500)), L["min_move_m"])
     s["min_turn_time_seconds"] = max(float(s.get("min_turn_time_seconds", 60)), L["min_interval_seconds"])
     out["max_per_hour"] = int(min(max(int(out.get("max_per_hour", 2)), 1), L["max_per_hour"]))
@@ -88,12 +95,19 @@ class BeaconService(threading.Thread):
         self._cf: Optional[int] = None
         self._cf_checked_at = 0.0
         self._pending: Optional[Dict[str, Any]] = None   # a manual send waiting for a preferred band
+        self._freq_hz: Optional[int] = None               # VarAC's frequency as last observed by us
+        self._freq_changed_at = 0.0                        # when it last changed (our clock)
+        self._dwells: deque = deque(maxlen=8)              # recent scanner stop lengths (s)
+        self._fail_streak = 0
+        self._block_logged: Optional[str] = None
+        self._verify: Optional[Dict[str, Any]] = None      # a sent row whose real TX frequency we still owe
         self.state: Dict[str, Any] = {
             "enabled": False, "dry_run": True, "mode": "fixed", "method": "broadcast",
             "blocked": None, "decision": None, "next_due_seconds": None,
             "last_tx": None, "tx_last_hour": 0, "last_tick": None, "ignore_dcd": None, "varac_activity": None,
             "on_calling_frequency_hz": None, "current_frequency_hz": None,
             "current_band": None, "preferred_bands": [], "holding_for_band": None, "pending": None,
+            "scanner_dwell_seconds": None, "band_window_seconds": None, "band_age_seconds": None,
         }
 
     def stop(self) -> None:
@@ -198,6 +212,8 @@ class BeaconService(threading.Thread):
             running = self.rt.poller.snapshot().get("varac_running")
             if running is False:
                 return "VarAC is not running"
+            if varac_tx.session_locked():
+                return "Windows session is locked; VarMap cannot drive VarAC's window until you unlock"
             act = self._varac_activity()
             if act.get("running") and act.get("busy"):
                 return f"holding: {act.get('reason')}"
@@ -205,8 +221,10 @@ class BeaconService(threading.Thread):
                 if self._ignore_dcd():
                     return "VarAC is set to Ignore DCD (busy-channel protection is off); untick it in VarAC or disable the DCD guard"
             since_fail = time.time() - self._last_fail_at
-            if since_fail < FAIL_BACKOFF_SECONDS:
-                return f"last attempt failed ({self._last_fail_reason}); retrying in {int(FAIL_BACKOFF_SECONDS - since_fail)} s"
+            backoff = self._fail_backoff()
+            if since_fail < backoff:
+                return (f"last attempt failed ({self._last_fail_reason}); {self._fail_streak} in a row, "
+                        f"retrying in {int(backoff - since_fail)} s")
         return None
 
     def _on_calling_frequency(self, bc: Dict[str, Any]) -> Optional[int]:
@@ -231,12 +249,48 @@ class BeaconService(threading.Thread):
             raw = raw.split(",")
         return [normalise_band(b) for b in raw if normalise_band(b)]
 
-    def _current_band(self) -> Optional[str]:
+    def _fail_backoff(self) -> float:
+        """120 s after the first failure, doubling each time, capped at 30 min: a locked
+        or wedged VarAC is not poked every two minutes all night."""
+        return min(FAIL_BACKOFF_SECONDS * (2 ** max(0, self._fail_streak - 1)), FAIL_BACKOFF_MAX_SECONDS)
+
+    def _note_block(self, reason: Optional[str]) -> None:
+        """Log block reasons once per change (numbers normalised), so a silent night is explained."""
+        key = re.sub(r"\d+", "#", reason) if reason else None
+        if key != self._block_logged:
+            self._block_logged = key
+            if reason:
+                log.info("position TX held: %s", reason)
+            else:
+                log.info("position TX no longer held")
+
+    def _observe_frequency(self) -> Optional[int]:
+        """Track VarAC's frequency on our own clock so we know how long it has been on the
+        current band and how long the scanner tends to stay on each stop."""
         try:
             hz = self.vc.current_frequency_hz()
         except Exception:  # noqa: BLE001
             hz = None
-        return freq_to_band(hz)
+        now = time.time()
+        if hz != self._freq_hz:
+            if self._freq_hz is not None and self._freq_changed_at:
+                stay = now - self._freq_changed_at
+                if stay <= SCANNER_DWELL_MAX_SECONDS:
+                    self._dwells.append(stay)
+            self._freq_hz, self._freq_changed_at = hz, now
+        return hz
+
+    def _scanner_dwell(self) -> Optional[float]:
+        """Typical scanner stop length, or None when the scanner does not look active."""
+        if len(self._dwells) < 2 or time.time() - self._freq_changed_at > SCANNER_DWELL_MAX_SECONDS:
+            return None
+        return float(statistics.median(self._dwells))
+
+    def _band_window(self, dwell: float) -> float:
+        return max(4.0, min(0.35 * dwell, 15.0))
+
+    def _current_band(self) -> Optional[str]:
+        return freq_to_band(self._observe_frequency())
 
     def _band_hold(self, bc: Dict[str, Any]) -> Optional[str]:
         """None when VarAC is on an acceptable band, else a human reason to wait."""
@@ -244,9 +298,64 @@ class BeaconService(threading.Thread):
         if not pref:
             return None
         band = self._current_band()
-        if band and band in pref:
+        if band not in pref:
+            return f"waiting for VarAC to be on {'/'.join(pref)} (now {band or 'unknown'})"
+        # On a preferred band.  If the scanner is hopping, only start a send early in the
+        # stop: the dialog takes a few seconds and VarAC queues the broadcast until the
+        # channel is clear, so a late start goes out on the NEXT band (seen live, 2026-09-04).
+        dwell = self._scanner_dwell()
+        if dwell:
+            window = self._band_window(dwell)
+            age = time.time() - self._freq_changed_at
+            if age > window:
+                return (f"on {band} but {int(age)} s into a ~{int(dwell)} s scanner stop (sends start within "
+                        f"{int(window)} s); waiting for the next {band} stop")
+        return None
+
+    def _band_precheck(self, bc: Dict[str, Any]):
+        """Callable for varac_tx: re-check the band right before the final click."""
+        pref = self._preferred_bands(bc)
+        if not pref:
             return None
-        return f"waiting for VarAC to be on {'/'.join(pref)} (now {band or 'unknown'})"
+
+        def check() -> Optional[str]:
+            band = freq_to_band(self.vc.current_frequency_hz())
+            if band not in pref:
+                return f"VarAC moved to {band or 'an unknown band'} while the dialog was open"
+            return None
+        return check
+
+    def _verify_tx_frequency(self, bc: Dict[str, Any]) -> None:
+        """VarAC logs 'Sending Async message' when it really keys up, often seconds after the
+        dialog closed (it waits for a clear channel).  Fix the logged frequency from that."""
+        v = self._verify
+        if not v:
+            return
+        try:
+            hz = self.vc.tx_frequency_for(v["message"])
+        except Exception:  # noqa: BLE001
+            hz = None
+        if hz is None:
+            if time.time() > v["deadline"]:
+                self._verify = None
+            return
+        self._verify = None
+        if hz != v.get("frequency_hz"):
+            try:
+                self.repo.beacon_tx_set_frequency(v["row_id"], hz)
+            except Exception as e:  # noqa: BLE001
+                log.debug("could not update TX frequency: %s", e)
+            with self._lock:
+                lt = self.state.get("last_tx")
+                if isinstance(lt, dict) and lt.get("requested_at") == v.get("requested_at"):
+                    lt["frequency_hz"] = hz
+        pref = self._preferred_bands(bc)
+        band = freq_to_band(hz)
+        if pref and band not in pref:
+            log.warning("broadcast went out on %s (%s Hz), not a preferred band: VarAC's scanner moved while the "
+                        "broadcast sat in its queue", band or "?", hz)
+        else:
+            log.info("VarAC transmitted on %s Hz (%s)", hz, band or "?")
 
     def _varac_activity(self) -> Dict[str, Any]:
         """Cached (5 s) read of VarAC's button states: connected / dialog open."""
@@ -297,14 +406,20 @@ class BeaconService(threading.Thread):
                                "last_tick": iso_utc(now_utc()), "current_band": self._current_band(),
                                "preferred_bands": self._preferred_bands(bc), "holding_for_band": None,
                                "pending": self._pending_summary(),
+                               "scanner_dwell_seconds": self._scanner_dwell(),
+                               "band_window_seconds": self._band_window(self._scanner_dwell()) if self._scanner_dwell() else None,
+                               "band_age_seconds": (time.time() - self._freq_changed_at) if self._freq_changed_at else None,
                                "tx_last_hour": self.repo.beacon_tx_count_since(
                                    iso_utc(now_utc() - timedelta(hours=1)), real_only=False)})
+            self._verify_tx_frequency(bc)
             self._service_pending(bc, fix, hold)
             self.state["pending"] = self._pending_summary()
             if not bc.get("enabled"):
                 self.state.update({"blocked": None, "decision": "disabled", "next_due_seconds": None})
+                self._block_logged = None
                 return
             blocked = self._blocked_reason(bc, fix)
+            self._note_block(blocked)
             if blocked:
                 self.state.update({"blocked": blocked, "decision": "blocked", "next_due_seconds": None})
                 return
@@ -375,27 +490,34 @@ class BeaconService(threading.Thread):
         else:
             method = "broadcast"   # relayed text always goes out as a broadcast
         requested = iso_utc(now_utc())
+        try:   # frequency when we handed the message over; verified against VarAC.log afterwards
+            freq = self._observe_frequency()
+        except Exception:
+            freq = None
         ok, err = True, None
         if not dry:
             if method == "beacon":
                 ok, err = varac_tx.send_one_time_beacon()
             else:
-                ok, err = varac_tx.send_broadcast(message, bc.get("broadcast_to") or "ALL")
-        try:
-            freq = self.vc.current_frequency_hz()
-        except Exception:
-            freq = None
+                ok, err = varac_tx.send_broadcast(message, bc.get("broadcast_to") or "ALL",
+                                                  precheck=self._band_precheck(bc))
+        aborted = (not ok) and str(err or "").startswith("aborted")
         row = dict(requested_at=requested, sent_at=iso_utc(now_utc()) if ok else None, lat=fix.lat, lon=fix.lon,
                    grid=fix.grid, trigger=trigger, method=method, message=message, dry_run=1 if dry else 0,
                    ok=1 if ok else 0, error=err or None, frequency_hz=freq)
+        row_id = None
         try:
-            self.repo.beacon_tx_add(**row)
+            row_id = self.repo.beacon_tx_add(**row)
         except Exception as e:
             log.warning("could not log beacon_tx: %s", e)
         if ok:
             policy = self._policy_for(bc)
             policy.mark_sent(Fix(fix.lat, fix.lon, fix.time, fix.speed_kmh, fix.course_deg), now_utc())
             self._last_fail_at = 0.0
+            self._fail_streak = 0
+            if not dry and method == "broadcast" and row_id is not None:
+                self._verify = {"row_id": row_id, "message": message, "frequency_hz": freq,
+                                "requested_at": requested, "deadline": time.time() + VERIFY_TX_SECONDS}
             log.info("%s %s via %s: %s", "DRY-RUN" if dry else "SENT", trigger, method, message)
             if not dry and not trigger.startswith("relay"):
                 try:   # stage 3: mirror our own position to APRS through Graywolf (no-op unless enabled)
@@ -404,11 +526,17 @@ class BeaconService(threading.Thread):
                         gtx.mirror(fix, trigger)
                 except Exception as e:  # noqa: BLE001
                     log.debug("APRS mirror hook failed: %s", e)
+        elif aborted:
+            # Not a failure: we chose not to send (band moved).  No backoff; try the next window.
+            self._activity_at = 0.0
+            log.info("send %s: %s", trigger, err)
         else:
+            self._fail_streak += 1
             self._last_fail_at = time.time()
             self._last_fail_reason = err or "unknown"
             self._activity_at = 0.0   # re-read VarAC's state on the next tick
-            log.warning("transmit failed (%s via %s): %s", trigger, method, err)
+            log.warning("transmit failed (%s via %s): %s; next retry in %d s", trigger, method, err,
+                        int(self._fail_backoff()))
         with self._lock:
             self.state["last_tx"] = row
         return row

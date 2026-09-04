@@ -637,9 +637,12 @@
   async function refreshBeaconPane() {
     if (modal.classList.contains("hidden")) return;
     let b; try { b = await api("/api/beacon"); } catch (e) { return; }
-    const lines = [`Auto position TX: ${b.enabled ? (b.dry_run ? "RUNNING (dry run)" : "RUNNING - LIVE") : "stopped"}`,
+    const stalled = b.last_tick && (Date.now() - Date.parse(b.last_tick)) > 30000;
+    const lines = [stalled ? `WARNING: the Position TX thread has not run for ${ageStr(b.last_tick)} - restart VarMap` : "",
+      `Auto position TX: ${b.enabled ? (b.dry_run ? "RUNNING (dry run)" : "RUNNING - LIVE") : "stopped"}`,
       `Mode: ${b.mode} · method: ${b.method}`, `Decision: ${b.blocked ? "blocked - " + b.blocked : b.decision || "—"}${b.next_due_seconds != null ? ` · next possible in ${Math.round(b.next_due_seconds)} s` : ""}`,
       `VarAC frequency: ${b.current_frequency_hz ? fmtFreq(b.current_frequency_hz) + " Hz" : "unknown"} (${b.current_band || "band ?"})${b.on_calling_frequency_hz ? " - a CALLING FREQUENCY (smart timing blocked here)" : ""}${(b.preferred_bands || []).length ? " · preferred: " + b.preferred_bands.join(", ") : ""}${b.holding_for_band ? "\nHOLDING: " + b.holding_for_band : ""}`,
+      b.scanner_dwell_seconds ? `Scanner: ~${Math.round(b.scanner_dwell_seconds)} s per stop; sends are started only in the first ${Math.round(b.band_window_seconds || 0)} s of a preferred-band stop` : "",
       b.pending ? `Queued manual send (${b.pending.kind}): ${b.pending.waiting_for}; gives up ${ageStr(b.pending.expires_at) === "0s" ? "now" : "at " + (b.pending.expires_at || "").slice(11, 19) + "z"}` : "",
       `VarAC activity: ${b.varac_activity ? (b.varac_activity.busy === true ? "BUSY - " + b.varac_activity.reason : b.varac_activity.busy === false ? "free (not connected, Broadcast window closed)" : b.varac_activity.reason || "unknown") : "not checked yet"}`,
       `VarAC Ignore DCD box: ${b.ignore_dcd === true ? "TICKED - busy-channel protection OFF" : b.ignore_dcd === false ? "not ticked (VarAC waits for a clear channel)" : "unknown (VarAC not running or not checked yet)"}`,

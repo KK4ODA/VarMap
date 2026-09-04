@@ -472,6 +472,10 @@ class Repository:
                 f"INSERT INTO beacon_tx({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})", vals)
             return cur.lastrowid
 
+    def beacon_tx_set_frequency(self, row_id: int, hz: Optional[int]) -> None:
+        with self._write_lock:
+            self.conn().execute("UPDATE beacon_tx SET frequency_hz=? WHERE id=?", (hz, row_id))
+
     def beacon_tx_recent(self, limit: int = 50) -> List[Dict[str, Any]]:
         return [dict(r) for r in self.conn().execute("SELECT * FROM beacon_tx ORDER BY id DESC LIMIT ?", (limit,))]
 
