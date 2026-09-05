@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.11 (2026-09-04)
+
+- Removed the "Hide positions older than" filter; "Show stations heard within" is the only time filter and marker colour shows position age.
+
 ## 0.3.10 (2026-09-04)
 
 - Keepalive removed. "Only if moved" (now in both timing modes, on by default) means a parked station is silent; switch it off and the plain schedule applies (interval / slow rate). Old max_interval settings are ignored.

@@ -211,12 +211,12 @@
   }
 
   // ---------------------------------------------------------------- filters
-  const FILTER_DEFAULTS = { "f-age": "0", "f-heard": "604800", "f-band": "", "f-dist": "0", "f-snr": "", "f-src": "",
+  const FILTER_DEFAULTS = { "f-heard": "604800", "f-band": "", "f-dist": "0", "f-snr": "", "f-src": "",
     "f-emcomm": false, "f-bbs": false, "f-email": false, "f-ai": false, "f-pota": false, "f-fav": false };
   const SRC_GROUPS = { beacon: ["beacon", "cq"], broadcast: ["broadcast_gps", "broadcast_grid"], vmail: ["gps_tag"], aprs: ["aprs"], exact: ["broadcast_gps", "gps_tag", "manual", "aprs"] };
   function filters() {
     return {
-      q: $("search").value.trim().toUpperCase(), age: Number($("f-age").value), heard: Number($("f-heard").value),
+      q: $("search").value.trim().toUpperCase(), heard: Number($("f-heard").value),
       band: $("f-band").value, dist: Number($("f-dist").value), snr: $("f-snr").value === "" ? null : Number($("f-snr").value),
       src: $("f-src").value,
       emcomm: $("f-emcomm").checked, bbs: $("f-bbs").checked, email: $("f-email").checked, ai: $("f-ai").checked,
@@ -242,15 +242,12 @@
   let F = null;
   function passesMapFilter(st) {
     const f = F || filters();
-    if (!passesCommon(st, f)) return false;
-    if (f.age && (ageSec(st.position_time) ?? Infinity) > f.age) return false;
-    return true;
+    return passesCommon(st, f);
   }
   function passesListFilter(st) {
     const f = F || filters();
     if (!passesCommon(st, f)) return false;
     if (st.lat == null && !f.unlocated) return false;
-    if (f.age && st.lat != null && (ageSec(st.position_time) ?? Infinity) > f.age) return false;
     return true;
   }
   function filterCounts() {
@@ -275,12 +272,11 @@
   }
   function loadFilters() {
     const o = lsGet("filters", null); if (!o) return;
-    // Migration: the old "position newer than" default (7 days) is now "never"; heard-within took over.
-    if (o["f-age"] === "604800" && (o["f-heard"] === "0" || o["f-heard"] === undefined)) { o["f-age"] = "0"; o["f-heard"] = "604800"; }
+    delete o["f-age"];   // filter removed in 0.3.11
     for (const id in o) { const el = $(id); if (!el) continue; if (el.type === "checkbox") el.checked = !!o[id]; else if ([...el.options].some((op) => op.value === String(o[id]))) el.value = o[id]; }
   }
   function applyFilters() { F = filters(); refreshAllMarkers(); renderList(); F = null; updateBadges(); saveFilters(); }
-  ["search", "f-age", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "f-aprs", "sort"].forEach((id) => {
+  ["search", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "f-aprs", "sort"].forEach((id) => {
     $(id).addEventListener("input", applyFilters); $(id).addEventListener("change", applyFilters);
   });
   $("f-grid").addEventListener("change", () => { showGridRect(S.selected ? S.stations.get(S.selected) : null); saveFilters(); });

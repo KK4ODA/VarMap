@@ -15,15 +15,10 @@
   <input id="search" type="search" placeholder="Search callsign / grid / QTH" autocomplete="off" title="Type part of a callsign, grid square, name or QTH to filter the map and the list">
   <details class="dd" id="dd-filters" title="Filters that apply to the map and the station list together"><summary>Filters <span id="f-badge" class="badge hidden"></span><span class="caret"></span></summary>
     <div class="dd-body filters">
-      <label class="fl" title="The main filter: show stations heard (any frame, with or without a position) within this time, on the map and in the list. Older stations stay in the database and come back when you widen this">Show stations heard within
+      <label class="fl" title="Show stations heard (any frame, with or without a position) within this time, on the map and in the list. Older stations stay in the database and come back when you widen this. Marker colour shows how old each position is">Show stations heard within
         <select id="f-heard">
           <option value="900">15 min</option><option value="3600">1 hour</option><option value="21600">6 hours</option>
           <option value="86400">24 hours</option><option value="604800" selected>7 days</option><option value="2592000">30 days</option><option value="0">Any time</option>
-        </select></label>
-      <label class="fl" title="Optional extra: also drop stations whose last known POSITION is older than this, even if they were heard more recently without a locator. Normally leave at Never; marker colour already shows position age">Hide positions older than
-        <select id="f-age">
-          <option value="0" selected>Never</option><option value="3600">1 hour</option><option value="21600">6 hours</option>
-          <option value="86400">24 hours</option><option value="604800">7 days</option><option value="2592000">30 days</option>
         </select></label>
       <label class="fl" title="Only stations last heard on this band">Band
         <select id="f-band"><option value="">All bands</option></select></label>
