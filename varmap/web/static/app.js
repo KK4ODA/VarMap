@@ -37,6 +37,34 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   function fmtFreq(hz) { if (!hz) return ""; const s = String(hz); return s.replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
   function dist(st) { return st.distance_display || ""; }
+  // Units: everything is stored metric; the UI converts when the user chose imperial.
+  const imperial = () => S.units === "MI";
+  const UNIT_FACTOR = { m: 3.28084, kmh: 1 / 1.609344 };          // metric -> imperial
+  const UNIT_LABEL = { m: ["m", "ft"], kmh: ["km/h", "mph"] };
+  function toDisplay(v, unit) { return imperial() ? v * UNIT_FACTOR[unit] : v; }
+  function fromDisplay(v, unit) { return imperial() ? v / UNIT_FACTOR[unit] : v; }
+  function accStr(m) {
+    if (!m) return "";
+    if (imperial()) return m >= 1609 ? `±${(m / 1609.344).toFixed(0)} mi` : `±${Math.round(m * 3.28084)} ft`;
+    return m >= 1000 ? `±${(m / 1000).toFixed(0)} km` : `±${m.toFixed(0)} m`;
+  }
+  function updateUnitLabels() {
+    document.querySelectorAll("[data-ulabel]").forEach((el) => { el.textContent = UNIT_LABEL[el.dataset.ulabel][imperial() ? 1 : 0]; });
+    document.querySelectorAll("input[data-unit]").forEach((el) => {
+      if (el.dataset.minMetric === undefined) el.dataset.minMetric = el.min || "";
+      if (el.dataset.minMetric !== "") el.min = Math.round(toDisplay(Number(el.dataset.minMetric), el.dataset.unit));
+    });
+  }
+  function setUnits(u) {
+    if (u === S.units) return;
+    // Re-express any unit-bearing settings inputs that are currently on screen.
+    const metric = {};
+    document.querySelectorAll("input[data-unit]").forEach((el) => { if (el.value !== "") metric[el.dataset.cfg] = fromDisplay(Number(el.value), el.dataset.unit); });
+    S.units = u;
+    document.querySelectorAll("input[data-unit]").forEach((el) => { if (metric[el.dataset.cfg] != null) el.value = Math.round(toDisplay(metric[el.dataset.cfg], el.dataset.unit)); });
+    updateDistanceLabels(); updateUnitLabels();
+    if (S.selected) { const d = S.stations.get(S.selected); if (d) renderDetail(d); }
+  }
   function isAprs(st) { return st.last_frame_kind === "aprs" || st.position_source === "aprs"; }
   // One symbol vocabulary for the map marker, the list and the station panel.
   function dotClasses(st) {
@@ -111,7 +139,7 @@
           <div class="lg"><span class="stn fresh aprs sym"><span class="dot"></span></span> diamond: APRS station via Graywolf (square: APRS object)</div>
           <div class="lg"><span class="sym"><i class="dot none"></i></span> heard, no position (list only)</div>
           <div class="lg"><span class="sym"><span class="lg-cluster">12</span></span> cluster; colour = freshest member</div>
-          <div class="lg"><span class="sym"><span class="lg-rect"></span></span> grid square of a grid-derived position (±4 km)</div>
+          <div class="lg"><span class="sym"><span class="lg-rect"></span></span> grid square of a grid-derived position (±4 km / 2.5 mi)</div>
           <div class="lg"><span class="sym"><span class="lg-track"></span></span> 7-day track</div>
           <h5>Station tags</h5>
           <div class="lg chips"><span class="chip em">EMCOMM</span> EmComm <span class="chip">BBS</span> public BBS <span class="chip">EMAIL</span> email gateway <span class="chip">AI</span> AI gateway <span class="chip">DIPL</span> diploma programme</div>
@@ -360,7 +388,7 @@
   }
   function renderDetail(d) {
     const unl = d.lat == null;
-    const acc = d.accuracy_m ? (d.accuracy_m >= 1000 ? `±${(d.accuracy_m / 1000).toFixed(0)} km` : `±${d.accuracy_m.toFixed(0)} m`) : "";
+    const acc = accStr(d.accuracy_m);
     const srcName = { beacon: "VarAC advanced beacon (grid only)", cq: "VarAC CQ frame (grid only)", gps_tag: "VarAC VMail <GPS:> tag", broadcast_gps: "VarAC broadcast with <GPS:> (a Position TX)", broadcast_grid: "grid found in VarAC broadcast text", manual: "manual", aprs: "APRS via Graywolf" }[d.position_source] || d.position_source || "";
     const distinctGrids = new Set((d.positions || []).map((p) => p.grid).filter(Boolean)).size;
     const heard = (d.heard || []).map((h) => `<div class="heard-row"><span class="t">${ageStr(h.heard_at)}</span><span>${esc(h.frame_kind)}${h.had_position ? "" : " (no loc)"}</span><span>${esc(h.band || "")} ${h.snr_db ?? ""}</span><span class="txt">${esc(h.text || "")}</span></div>`).join("");
@@ -466,7 +494,7 @@
 
   async function refreshHealth() {
     let h; try { h = await api("/api/health"); } catch (e) { $("pill-varac").textContent = "VarMap offline"; $("pill-varac").className = "pill err"; return; }
-    S.health = h; if (S.units !== h.units) { S.units = h.units; updateDistanceLabels(); }
+    S.health = h; setUnits(h.units);
     const p = h.poller;
     const pill = $("pill-varac");
     if (p.connected) { pill.textContent = p.varac_running === false ? "VarAC DB OK · app not running" : "VarAC OK"; pill.className = "pill " + (p.varac_running === false ? "warn" : "ok"); }
@@ -552,13 +580,17 @@
   function bindConfig(cfg) {
     document.querySelectorAll("[data-cfg]").forEach((el) => {
       const v = getPath(cfg, el.dataset.cfg);
-      if (el.type === "checkbox") el.checked = !!v; else el.value = v == null ? "" : v;
+      if (el.type === "checkbox") el.checked = !!v;
+      else if (el.dataset.unit && v != null && v !== "") el.value = Math.round(toDisplay(Number(v), el.dataset.unit));
+      else el.value = v == null ? "" : v;
     });
+    updateUnitLabels();
   }
   function collectConfig() {
     const patch = {};
     document.querySelectorAll("[data-cfg]").forEach((el) => {
       let v; if (el.type === "checkbox") v = el.checked; else if (el.type === "number") v = el.value === "" ? 0 : Number(el.value); else v = el.value;
+      if (el.dataset.unit && el.type === "number") v = Math.round(fromDisplay(v, el.dataset.unit));
       setPath(patch, el.dataset.cfg, v);
     });
     return patch;
@@ -665,9 +697,14 @@
   };
   function applySmartProfile(name) {
     const p = SMART_PROFILES[name]; if (!p) return;
-    for (const k in p) { const el = document.querySelector(`[data-cfg="beacon.smart.${k}"]`); if (el) el.value = p[k]; }
+    for (const k in p) { const el = document.querySelector(`[data-cfg="beacon.smart.${k}"]`); if (el) el.value = el.dataset.unit ? Math.round(toDisplay(p[k], el.dataset.unit)) : p[k]; }
   }
   $("smart-profile").addEventListener("change", (e) => applySmartProfile(e.target.value));
+  $("units-select").addEventListener("change", (e) => {
+    const v = e.target.value;
+    const varac = (S.health && S.health.varac && S.health.varac.distance_unit) || "MI";
+    setUnits(v === "auto" ? (String(varac).toUpperCase().startsWith("MI") ? "MI" : "KM") : v);
+  });
   document.querySelectorAll('[data-cfg^="beacon.smart."]').forEach((el) => {
     if (el.id === "smart-profile" || el.type === "checkbox") return;
     el.addEventListener("input", () => { $("smart-profile").value = "custom"; });

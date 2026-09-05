@@ -137,6 +137,10 @@ preferred band and re-checks the band right before the final click, because VarA
 broadcast until the channel is clear and a late start would go out on the next band. The
 frequency VarAC really transmitted on is read back from `VarAC.log` and shown in the TX log.
 
+**Imperial or metric.** Settings, Display, Units: imperial (miles, feet, mph) or metric
+(km, m, km/h), or follow VarAC's own distance unit. It applies to list and panel distances,
+accuracy, speeds and the movement thresholds; values are stored in metric.
+
 **A parked station is silent.** "Only if moved" (on by default in both timing modes) means a
 station that has not moved since its last broadcast sends nothing at all. Switch it off and the
 plain schedule applies: every interval in fixed mode, the slow rate in smart mode. There is no

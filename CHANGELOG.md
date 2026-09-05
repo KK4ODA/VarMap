@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.12 (2026-09-04)
+
+- Units setting now covers everything: imperial (miles, feet, mph) or metric (km, m, km/h). Movement thresholds and speeds on the Position TX tab are shown and edited in the chosen unit (stored in metric); accuracy shows in ft/mi or m/km. Changing the setting re-labels the open settings page immediately.
+
 ## 0.3.11 (2026-09-04)
 
 - Removed the "Hide positions older than" filter; "Show stations heard within" is the only time filter and marker colour shows position age.
