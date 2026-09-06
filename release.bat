@@ -11,7 +11,7 @@ if "%~1"=="" (
 )
 set VER=%~1
 git diff --quiet || (echo Working tree has uncommitted changes. Commit or stash them first. & exit /b 1)
-python -c "import re,io;p='varmap/__init__.py';s=open(p,encoding='utf-8').read();s=re.sub(r'__version__\s*=\s*\"[^\"]+\"','__version__ = \"%VER%\"',s);open(p,'w',encoding='utf-8').write(s);p='pyproject.toml';s=open(p,encoding='utf-8').read();s=re.sub(r'^version\s*=\s*\"[^\"]+\"','version = \"%VER%\"',s,flags=re.M);open(p,'w',encoding='utf-8').write(s)" || exit /b 1
+python packagingump_version.py %VER% || exit /b 1
 python -m pytest -q tests || (echo Tests failed; release aborted. & git checkout -- varmap/__init__.py pyproject.toml & exit /b 1)
 git add varmap/__init__.py pyproject.toml
 git commit -m "Release v%VER%" || exit /b 1
