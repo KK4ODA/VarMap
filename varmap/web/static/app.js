@@ -138,6 +138,7 @@
           <div class="lg"><span class="stn fresh emcomm sym"><span class="dot"></span></span> red halo: EmComm beacon</div>
           <div class="lg"><span class="stn fresh aprs sym"><span class="dot"></span></span> diamond: APRS station via Graywolf (square: APRS object)</div>
           <div class="lg"><span class="sym"><i class="dot none"></i></span> heard, no position (list only)</div>
+          <div class="lg"><span class="stn fresh sym"><span class="dot"></span><span class="wf safe"></span></span> shoulder badge: welfare check-in via Emcomm BBS (green SAFE, red NEED ASSISTANCE, orange TRAFFIC, grey stale)</div>
           <div class="lg"><span class="sym"><span class="lg-cluster">12</span></span> cluster; colour = freshest member</div>
           <div class="lg"><span class="sym"><span class="lg-rect"></span></span> grid square of a grid-derived position (±4 km / 2.5 mi)</div>
           <div class="lg"><span class="sym"><span class="lg-track"></span></span> 7-day track</div>
@@ -192,16 +193,23 @@
   loadMapOptions();
   let didFit = !!view;
 
+  function wfClass(st) { const w = st.welfare; return w ? "wf-" + (w.status_key || "other") + (w.stale ? " wf-stale" : "") : ""; }
+  function wfChip(st) {
+    const w = st.welfare; if (!w) return "";
+    const when = w.received_at ? ageStr(w.received_at) + " ago" : "";
+    return `<span class="chip wf-${esc(w.status_key || "other")}${w.stale ? " wf-stale" : ""}" title="Welfare check-in via Emcomm BBS: ${esc(w.status)}${w.name ? " · " + esc(w.name) : ""}${w.location ? " · " + esc(w.location) : ""}${when ? " · " + when : ""}${w.stale ? " · STALE board" : ""}">${esc(w.status)}${w.update_number ? " #" + w.update_number : ""}</span>`;
+  }
   function markerIcon(st) {
     const cls = ["stn", st.state, st.position_suspect ? "suspect" : "", st.is_emcomm ? "emcomm" : "",
-      isAprs(st) ? "aprs" : "", st.is_object ? "object" : "",
+      isAprs(st) ? "aprs" : "", st.is_object ? "object" : "", wfClass(st),
       S.selected === st.callsign ? "sel" : "", S.hover === st.callsign ? "hl" : ""].filter(Boolean).join(" ");
-    return L.divIcon({ className: cls, html: `<div class="dot"></div><div class="lbl">${esc(st.callsign)}${st.is_away ? " ⌛" : ""}</div>`, iconSize: [0, 0] });
+    return L.divIcon({ className: cls, html: `<div class="dot"></div><div class="wf"></div><div class="lbl">${esc(st.callsign)}${st.is_away ? " ⌛" : ""}</div>`, iconSize: [0, 0] });
   }
   function popupHtml(st) {
     return `<b style="font-family:monospace">${esc(st.callsign)}</b> ${esc(st.grid || "")}<br>` +
       `pos ${ageStr(st.position_time)} · heard ${ageStr(st.last_heard)}<br>` +
-      `${esc(st.last_band || "")} SNR ${st.last_snr_db ?? "—"} ${dist(st) ? "· " + dist(st) + " " + st.bearing_deg + "°" : ""}`;
+      `${esc(st.last_band || "")} SNR ${st.last_snr_db ?? "—"} ${dist(st) ? "· " + dist(st) + " " + st.bearing_deg + "°" : ""}` +
+      (st.welfare ? `<br>welfare: <b>${esc(st.welfare.status)}</b>${st.welfare.stale ? " (stale board)" : ""}` : "");
   }
   function syncMarker(st) {
     const visible = st.lat != null && passesMapFilter(st);
@@ -239,14 +247,14 @@
   }
 
   // ---------------------------------------------------------------- filters
-  const FILTER_DEFAULTS = { "f-heard": "604800", "f-band": "", "f-dist": "0", "f-snr": "", "f-src": "",
+  const FILTER_DEFAULTS = { "f-heard": "604800", "f-band": "", "f-dist": "0", "f-snr": "", "f-src": "", "f-welfare": "",
     "f-emcomm": false, "f-bbs": false, "f-email": false, "f-ai": false, "f-pota": false, "f-fav": false };
   const SRC_GROUPS = { beacon: ["beacon", "cq"], broadcast: ["broadcast_gps", "broadcast_grid"], vmail: ["gps_tag"], aprs: ["aprs"], exact: ["broadcast_gps", "gps_tag", "manual", "aprs"] };
   function filters() {
     return {
       q: $("search").value.trim().toUpperCase(), heard: Number($("f-heard").value),
       band: $("f-band").value, dist: Number($("f-dist").value), snr: $("f-snr").value === "" ? null : Number($("f-snr").value),
-      src: $("f-src").value,
+      src: $("f-src").value, welfare: $("f-welfare").value,
       emcomm: $("f-emcomm").checked, bbs: $("f-bbs").checked, email: $("f-email").checked, ai: $("f-ai").checked,
       pota: $("f-pota").checked, fav: $("f-fav").checked, unlocated: $("f-unlocated").checked, own: $("f-own").checked,
       aprs: $("f-aprs").checked,
@@ -262,6 +270,10 @@
     if (f.snr !== null && (st.last_snr_db == null || st.last_snr_db < f.snr)) return false;
     if (f.dist) { const km = st.distance_km; const lim = S.units === "MI" ? f.dist * 1.609344 : f.dist; if (km == null || km > lim) return false; }
     if (f.src && !(SRC_GROUPS[f.src] || []).includes(st.position_source)) return false;
+    if (f.welfare) {
+      const k = st.welfare ? (st.welfare.status_key || "other") : null;
+      if (f.welfare === "any" ? !k : f.welfare === "none" ? !!k : k !== f.welfare) return false;
+    }
     if (f.emcomm && !st.is_emcomm) return false; if (f.bbs && !st.is_bbs) return false;
     if (f.email && !st.is_email_gateway) return false; if (f.ai && !st.is_ai_gateway) return false;
     if (f.pota && st.last_cq_tag !== "POTA") return false; if (f.fav && !st.is_favorite) return false;
@@ -304,7 +316,7 @@
     for (const id in o) { const el = $(id); if (!el) continue; if (el.type === "checkbox") el.checked = !!o[id]; else if ([...el.options].some((op) => op.value === String(o[id]))) el.value = o[id]; }
   }
   function applyFilters() { F = filters(); refreshAllMarkers(); renderList(); F = null; updateBadges(); saveFilters(); }
-  ["search", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "f-aprs", "sort"].forEach((id) => {
+  ["search", "f-heard", "f-band", "f-dist", "f-snr", "f-src", "f-welfare", "f-emcomm", "f-bbs", "f-email", "f-ai", "f-pota", "f-fav", "f-unlocated", "f-own", "f-aprs", "sort"].forEach((id) => {
     $(id).addEventListener("input", applyFilters); $(id).addEventListener("change", applyFilters);
   });
   $("f-grid").addEventListener("change", () => { showGridRect(S.selected ? S.stations.get(S.selected) : null); saveFilters(); });
@@ -323,6 +335,7 @@
   function chips(st) {
     const out = [];
     if (isAprs(st)) out.push(`<span class="chip aprs" title="Heard on APRS via Graywolf${st.aprs_symbol ? " · symbol " + esc(st.aprs_symbol) : ""}">${st.is_object ? "APRS OBJ" : "APRS"}</span>`);
+    if (st.welfare) out.push(wfChip(st));
     if (st.is_emcomm) out.push('<span class="chip em">EMCOMM</span>');
     if (st.is_bbs) out.push('<span class="chip">BBS</span>');
     if (st.is_email_gateway) out.push('<span class="chip">EMAIL</span>');
@@ -405,6 +418,7 @@
         <tr><td>Heard</td><td>${d.heard_count} times since ${esc((d.first_heard || "").slice(0, 10))}</td></tr>
         <tr><td>Positions</td><td>${d.position_count} recorded · ${distinctGrids} distinct grid${distinctGrids === 1 ? "" : "s"} (last 30 d)</td></tr>
         ${d.last_text ? `<tr><td>Last text</td><td>${esc(d.last_text)}</td></tr>` : ""}
+        ${d.welfare ? `<tr><td>Welfare</td><td>${wfChip(d)} ${esc(d.welfare.name || "")}${d.welfare.location ? " · " + esc(d.welfare.location) : ""}${d.welfare.power ? " · power " + esc(d.welfare.power) : ""}${d.welfare.contact ? " · " + esc(d.welfare.contact) : ""}<br><span class="muted">${d.welfare.received_at ? "checked in " + ageStr(d.welfare.received_at) + " ago" : ""}${d.welfare.previous_status ? " · previously " + esc(d.welfare.previous_status) : ""}${d.welfare.stale ? " · board is stale" : ""}</span>${d.welfare.message ? `<div class="wf-msg">${esc(d.welfare.message)}</div>` : ""}</td></tr>` : ""}
       </table>
       <div class="actions">
         <button id="d-centre" ${unl ? "disabled" : ""} title="Centre the map on this station">Centre</button>
@@ -517,6 +531,14 @@
       $("st-aprs").textContent = `APRS: ${gw.connected ? "Graywolf connected" : "Graywolf " + (gw.status || "unavailable")}${gw.last_poll ? " · poll " + ageStr(gw.last_poll) + " ago" : ""}${gw.stations_total ? " · " + gw.stations_total.toLocaleString() + " updates" : ""}`;
       $("st-aprs").title = gw.last_error || ("Graywolf " + (gw.version || "") + " at " + (gw.base || ""));
     } else $("st-aprs").classList.add("hidden");
+    const wf = h.welfare || {};
+    if (wf.enabled && wf.found) {
+      const bs = wf.by_status || {};
+      const parts = ["SAFE", "NEED ASSISTANCE", "TRAFFIC"].filter((k) => bs[k]).map((k) => `${bs[k]} ${k === "NEED ASSISTANCE" ? "NEED" : k}`);
+      $("st-welfare").classList.remove("hidden");
+      $("st-welfare").textContent = `Welfare: ${wf.count} check-in${wf.count === 1 ? "" : "s"}${parts.length ? " (" + parts.join(", ") + ")" : ""} · board ${ageStr(wf.file_mtime)} old${wf.stale ? " · STALE" : ""}`;
+      $("st-welfare").style.color = bs["NEED ASSISTANCE"] && !wf.stale ? "var(--danger)" : "";
+    } else $("st-welfare").classList.add("hidden");
     const t = h.tiles;
     $("st-tiles").textContent = `Tiles: ${t.online_fetch ? "online + cache" : "OFFLINE cache only"}` + (t.download && t.download.active ? ` · downloading ${t.download.done}/${t.download.total}` : "") + (t.last_error && t.online_fetch ? " · fetch error" : "");
     const b = h.beacon; const bp = $("pill-beacon");
@@ -598,7 +620,7 @@
   async function openSettings(pane) {
     S.config = await api("/api/config"); bindConfig(S.config);
     modal.classList.remove("hidden"); if (pane) showPane(pane);
-    refreshSettingsInfo(); refreshBeaconPane(); refreshTilesPane(); refreshAprsPane();
+    refreshSettingsInfo(); refreshBeaconPane(); refreshTilesPane(); refreshAprsPane(); refreshWelfarePane();
   }
   function showPane(p) {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.pane === p));
@@ -630,7 +652,17 @@
     $("own-info").textContent = fmt(S.health.own);
     $("graywolf-info").textContent = fmt(S.health.graywolf || {});
     renderUpdateStatus(S.health.updates);
+    const wf = S.health.welfare || {};
+    $("welfare-info").textContent = !wf.enabled ? "Welfare check-ins are switched off." :
+      !wf.found ? `No welfare board found in ${wf.dir || "(no folder)"}.\nThat is normal when Emcomm BBS is not installed, not running, or has not received a check-in yet.${wf.last_error ? "\nLast error: " + wf.last_error : ""}` :
+      `Reading ${wf.file} in ${wf.dir}\n${wf.count} check-in(s) for ${wf.board_date || "?"} ${wf.window || ""}: ${Object.entries(wf.by_status || {}).map(([k, n]) => n + " " + k).join(", ") || "none"}\nBoard written ${ageStr(wf.file_mtime)} ago${wf.stale ? " - STALE (older than the limit below)" : ""} · last read ${ageStr(wf.last_poll)} ago${wf.last_error ? "\nLast read error (previous board kept): " + wf.last_error : ""}`;
   }
+  async function refreshWelfarePane() {
+    if (modal.classList.contains("hidden")) return;
+    let w; try { w = await api("/api/welfare"); } catch (e) { return; }
+    $("welfare-list").innerHTML = (w.entries || []).map((e) => `<div class="r"><span>${e.received_at ? ageStr(e.received_at) + " ago" : ""}</span><span><span class="chip wf-${esc(e.status_key)}${w.stale ? " wf-stale" : ""}">${esc(e.status)}</span>${e.update_number ? " #" + e.update_number : ""}</span><span>${e.callsign ? `<b data-cs="${esc(e.callsign)}">${esc(e.callsign)}</b>` : "<i>no callsign</i>"} ${esc(e.name || "")}</span><span>${esc(e.location || "")}${e.power ? " · power " + esc(e.power) : ""}${e.message ? " · " + esc(e.message) : ""}</span></div>`).join("") || '<div class="muted" style="padding:6px">No check-ins on the board.</div>';
+  }
+  $("welfare-list").addEventListener("click", (e) => { const b = e.target.closest("b[data-cs]"); if (b && S.stations.get(b.dataset.cs)) { modal.classList.add("hidden"); select(b.dataset.cs); } });
   async function refreshAprsPane() {
     if (modal.classList.contains("hidden")) return;
     let s; try { s = await api("/api/aprs/status"); } catch (e) { return; }
@@ -756,7 +788,7 @@
     setInterval(refreshHealth, 5000);
     setInterval(() => refreshStations(false), S.pollMs);
     setInterval(rerenderAges, 30000);
-    setInterval(() => { refreshBeaconPane(); refreshTilesPane(); refreshSettingsInfo(); refreshAprsPane(); }, 3000);
+    setInterval(() => { refreshBeaconPane(); refreshTilesPane(); refreshSettingsInfo(); refreshAprsPane(); refreshWelfarePane(); }, 3000);
     setInterval(refreshBroadcasts, 15000);
     setInterval(refreshOwnTrack, 60000);
     if (S.health && !S.health.poller.connected && !(S.config && S.config.varac.db_path) && S.health.poller.last_error) openSettings("varac");

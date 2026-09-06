@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 (2026-09-06)
+
+- Welfare check-ins from Emcomm BBS on the map. VarMap reads the `welfare_*.csv` that
+  [Emcomm BBS](https://github.com/KK4ODA/emcomm-bbs) writes into VarAC's BBS folder and marks
+  matching stations with a shoulder badge (green SAFE, red NEED ASSISTANCE, orange TRAFFIC), a
+  chip in the list and a Welfare row in the station panel; a new Filters → Welfare check-in
+  select narrows the map to a status, the status bar shows the board's totals, and Settings →
+  Welfare lists everyone on the board including name-only check-ins. Entirely read-only and
+  inert when Emcomm BBS is absent: no folder or file means no badges, a half-written file keeps
+  the previous board, and a board older than a configurable age is flagged stale.
+- `/api/welfare` and a `welfare` field on `/api/stations` for other tools (Emcomm BBS's
+  "Stations heard" bulletin reads VarMap's station list the same way).
+
 ## 0.3.13 (2026-09-04)
 
 - Fix the unit-bearing labels on the Position TX tab, which rendered as three stacked lines in 0.3.12.

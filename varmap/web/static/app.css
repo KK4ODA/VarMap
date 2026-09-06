@@ -209,3 +209,23 @@ i.dot.aprs { border-radius: 2px; transform: rotate(45deg); }
 .modal-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); }
 .legend { display: flex; gap: 14px; margin-top: 12px; color: var(--muted); }
 #count-shown { color: var(--muted); font-weight: 400; }
+
+/* Welfare check-ins from Emcomm BBS: a small badge at the marker's shoulder, chips in lists. */
+.stn .wf { display: none; position: absolute; left: 3px; top: -13px; width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.stn.wf-safe .wf, .stn.wf-need .wf, .stn.wf-traffic .wf, .stn.wf-other .wf { display: block; }
+.stn.wf-safe .wf { background: var(--ok); }
+.stn.wf-need .wf { background: var(--danger); animation: blink 1.4s infinite; }
+.stn.wf-traffic .wf { background: var(--warn); }
+.stn.wf-other .wf { background: var(--muted); }
+.stn.wf-stale .wf { background: #b0bec5; animation: none; }
+.size-large .stn .wf { left: 5px; top: -17px; width: 13px; height: 13px; }
+.size-xlarge .stn .wf { left: 7px; top: -21px; width: 16px; height: 16px; }
+.chip.wf-safe { background: #e6f4ea; color: var(--ok); }
+.chip.wf-need { background: var(--danger); color: #fff; }
+.chip.wf-traffic { background: #fff3e0; color: var(--warn); }
+.chip.wf-other { background: #eceff1; color: var(--muted); }
+.chip.wf-stale { background: #eceff1; color: var(--muted); text-decoration: line-through; }
+.lg .sym .wf { position: absolute; left: 12px; top: 0; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+.lg .sym .wf.safe { background: var(--ok); } .lg .sym .wf.need { background: var(--danger); } .lg .sym .wf.traffic { background: var(--warn); }
+#welfare-list .r span:nth-child(2) { min-width: 130px; }
+.wf-msg { margin-top: 4px; padding: 6px 8px; background: #fffde7; border-left: 3px solid var(--warn); white-space: pre-wrap; }

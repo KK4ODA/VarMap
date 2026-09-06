@@ -18,6 +18,7 @@ from .services.own_position import OwnPositionTracker
 from .services.poller import Poller
 from .services.tiles import RegionDownloader, TileFetcher, TileStore
 from .services.updater import Updater
+from .services.welfare_poller import WelfarePoller
 from .storage.repository import Repository
 
 log = logging.getLogger("varmap")
@@ -61,6 +62,7 @@ class Runtime:
         self.tracker = OwnPositionTracker(self)
         self.beacon = BeaconService(self)
         self.updater = Updater(self)
+        self.welfare = WelfarePoller(self)
         self._data_version = 0
         self._lock = threading.Lock()
         self.started = False
@@ -77,6 +79,7 @@ class Runtime:
         self.tracker.start()
         self.beacon.start()
         self.updater.start()
+        self.welfare.start()
         log.info("VarMap %s runtime started; data dir %s", __version__, self.cfg.data_dir())
 
     def stop(self) -> None:
@@ -86,6 +89,7 @@ class Runtime:
         self.tracker.stop()
         self.beacon.stop()
         self.updater.stop()
+        self.welfare.stop()
 
     def on_new_data(self, n: int) -> None:
         with self._lock:
@@ -100,6 +104,7 @@ class Runtime:
         self.poller.wake()
         self.graywolf.wake()
         self.tracker.wake()
+        self.welfare.wake()
 
     def health(self) -> Dict[str, Any]:
         """Never raises: a failing section reports its error instead of taking the UI down."""
@@ -120,6 +125,7 @@ class Runtime:
             "graywolf": safe(self.graywolf.snapshot, {"enabled": False, "connected": False}),
             "graywolf_tx": safe(self.graywolf_tx.snapshot, {}),
             "updates": safe(self.updater.snapshot, {"current": __version__, "available": False}),
+            "welfare": safe(self.welfare.snapshot, {"enabled": False, "found": False, "count": 0}),
             "own": safe(self.tracker.describe, {"fix": None}),
             "beacon": safe(self.beacon.snapshot, {"enabled": False}),
             "counts": safe(self.repo.counts, {}),

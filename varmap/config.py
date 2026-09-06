@@ -72,6 +72,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "gate_run_interval_seconds": 60,
         "gate_interval_seconds": 86400,
     },
+    "welfare": {                          # Emcomm BBS welfare board (github.com/KK4ODA/emcomm-bbs), read-only
+        "enabled": True,                  # harmless when Emcomm BBS is absent: no file = no badges
+        "board_dir": "",                  # '' => VarAC's [BBS] BBSDirectory from VarAC.ini, else C:\VarAC BBS
+        "poll_interval_seconds": 15,
+        "max_age_hours": 24,              # a board older than this is shown but flagged stale
+    },
     "staleness": {"fresh_minutes": 30, "recent_hours": 2, "stale_hours": 24, "hide_after_days": 30},
     "history": {"keep_days": 90, "max_positions_per_station": 1000, "prune_interval_minutes": 60},
     "map": {"default_zoom": 5, "show_grid_squares": True, "units": "auto"},   # auto => VarAC's LocatorsDistanceUnit

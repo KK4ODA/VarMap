@@ -38,6 +38,12 @@
           <option value="broadcast">VarAC broadcast text</option><option value="vmail">VarAC VMail GPS tag</option>
           <option value="aprs">APRS (via Graywolf)</option><option value="exact">Exact coordinates only</option>
         </select></label>
+      <label class="fl" title="Welfare check-in status from Emcomm BBS's Welfare Board (needs Emcomm BBS writing its board to VarAC's BBS folder)">Welfare check-in
+        <select id="f-welfare">
+          <option value="" selected>Any</option><option value="any">Checked in (any status)</option>
+          <option value="need">NEED ASSISTANCE</option><option value="safe">SAFE</option><option value="traffic">TRAFFIC</option>
+          <option value="none">Not checked in</option>
+        </select></label>
       <hr>
       <button id="btn-clear-filters" title="Reset every filter in this menu and in Flags">Clear all filters</button>
     </div>
@@ -105,6 +111,7 @@
   <span id="st-varac" title="VarAC database connection, last poll, frames stored, current VarAC frequency and database version">VarAC: …</span>
   <span id="st-own" title="My own position and where it comes from (gps_log = VarAC's GPS file, manual_ini = VarAC ManualGPSData, my_locator = grid from VarAC.ini)">Own: …</span>
   <span id="st-aprs" class="hidden" title="APRS feed from Graywolf: connection state and stations received">APRS: …</span>
+  <span id="st-welfare" class="hidden" title="Emcomm BBS Welfare Board: check-ins read from the welfare CSV in VarAC's BBS folder"></span>
   <span id="st-tiles" title="Map tiles: online + cache means new tiles are fetched and saved; cache only means fully offline">Tiles: …</span>
   <span id="st-backfill" class="hidden" title="Reading VarAC's beacon history into VarMap's own database"></span>
   <span class="spacer"></span>
@@ -120,6 +127,7 @@
         <button class="tab" data-pane="beacon" title="Broadcasting my position through VarAC">Position TX</button>
         <button class="tab" data-pane="aprs" title="APRS stations via the Graywolf APRS client">APRS</button>
         <button class="tab" data-pane="tiles" title="Downloading map areas for use without internet">Offline maps</button>
+        <button class="tab" data-pane="welfare" title="Welfare check-ins from the Emcomm BBS companion app">Welfare</button>
         <button class="tab" data-pane="display" title="Units, colours and how long history is kept">Display</button>
       </div>
       <button id="btn-close-settings" title="Close settings (Esc)">✕</button>
@@ -320,6 +328,21 @@
       <h4>Cached tiles</h4>
       <div id="tiles-stats" class="info" title="What is in the offline cache"></div>
       <div id="regions" class="log" title="Regions you downloaded. Remove forgets the region and can also delete its tiles"></div>
+    </div>
+
+    <div class="pane" data-pane="welfare">
+      <h3>Welfare check-ins from Emcomm BBS</h3>
+      <p class="muted"><a href="https://github.com/KK4ODA/emcomm-bbs" target="_blank" rel="noopener">Emcomm BBS</a> runs a Welfare Board: operators send a check-in file over VarAC and it publishes a roster (SAFE, NEED ASSISTANCE, TRAFFIC) as HTML, text and CSV into VarAC's BBS folder. VarMap reads that CSV and marks the matching stations on the map. Read-only; nothing is sent anywhere. When Emcomm BBS is not installed or not running there is simply no board and nothing is shown.</p>
+      <div class="grid2">
+        <label title="Read the welfare board and mark checked-in stations. Safe to leave on: without a board file nothing happens"><input type="checkbox" data-cfg="welfare.enabled"> Show welfare check-ins on the map</label>
+        <label title="Folder where Emcomm BBS writes welfare_*.csv. Blank = VarAC's BBS folder from VarAC.ini ([BBS] BBSDirectory), which is where Emcomm BBS writes by default">Board folder <input data-cfg="welfare.board_dir" placeholder="blank = VarAC BBS folder from VarAC.ini"></label>
+        <label title="How often to re-read the CSV. Emcomm BBS rewrites it after every check-in">Poll interval (s) <input type="number" min="5" data-cfg="welfare.poll_interval_seconds"></label>
+        <label title="A board file older than this is still shown, but marked stale (grey badge) because the net it belongs to is probably over">Stale after (h) <input type="number" min="1" data-cfg="welfare.max_age_hours"></label>
+      </div>
+      <pre id="welfare-info" class="info" title="Live state of the welfare board reader"></pre>
+      <h4>Current check-ins</h4>
+      <div id="welfare-list" class="log" title="Everyone on the current board, including family members who checked in by name only"></div>
+      <p class="muted">Legend: <span class="chip wf-safe">SAFE</span> <span class="chip wf-need">NEED ASSISTANCE</span> <span class="chip wf-traffic">TRAFFIC</span> <span class="chip wf-stale">stale board</span>. Filters &rarr; Welfare check-in narrows the map and list to a status.</p>
     </div>
 
     <div class="pane" data-pane="display">

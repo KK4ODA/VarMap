@@ -203,6 +203,22 @@ VarAC users without VarMap can adopt it too). Anyone running VarMap with object
 relaying enabled may then put your VarAC position on APRS under their callsign.
 No token means no.
 
+## Welfare check-ins from Emcomm BBS
+
+[Emcomm BBS](https://github.com/KK4ODA/emcomm-bbs) runs a Welfare Board: operators send a
+check-in file over VarAC and it publishes a roster (SAFE, NEED ASSISTANCE, TRAFFIC) into
+VarAC's BBS folder. VarMap reads that folder's `welfare_*.csv` (read-only, every 15 s) and
+marks matching stations with a shoulder badge, a chip in the list and a Welfare row in the
+station panel. Filters → *Welfare check-in* narrows the map to one status; the status bar
+shows the board's totals; Settings → Welfare lists everyone on the board, including
+family members who checked in by name only.
+
+Nothing to configure when both apps use VarAC's defaults: the folder comes from
+`[BBS] BBSDirectory` in VarAC.ini. When Emcomm BBS is not installed or not running there is
+no file and nothing is shown; a board older than *Stale after* (24 h) is still shown but
+greyed out. In the other direction, Emcomm BBS's *Stations heard* bulletin reads VarMap's
+`/api/stations` when VarMap is running.
+
 ## Offline maps
 
 Every tile viewed is cached in `tiles.mbtiles`. Settings → Offline maps lets you

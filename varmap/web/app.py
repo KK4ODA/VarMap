@@ -62,6 +62,7 @@ def create_app(rt) -> Flask:
             st["bearing_deg"] = None
         if st.get("grid"):
             st["grid_bounds"] = grid_bounds(st["grid"])
+        st["welfare"] = rt.welfare.lookup(st["callsign"]) if st.get("callsign") else None
         return st
 
     def units_mi() -> bool:
@@ -167,6 +168,13 @@ def create_app(rt) -> Flask:
         body = request.get_json(force=True, silent=True) or {}
         rt.updater.skip(body.get("version"))
         return jsonify({"ok": True, "state": rt.updater.snapshot()})
+
+    @app.route("/api/welfare")
+    def api_welfare():
+        """Emcomm BBS welfare board: state plus every check-in (also the name-only ones)."""
+        s = rt.welfare.snapshot()
+        s["entries"] = rt.welfare.rows()
+        return jsonify(s)
 
     @app.route("/api/poll_now", methods=["POST"])
     def api_poll_now():
