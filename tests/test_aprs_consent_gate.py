@@ -62,14 +62,14 @@ def test_gate_candidates_enforce_consent():
         _obs("WITHDRAWN", 33.89, -84.30, 20, text="APRS:N", consent=False),
         _obs("APRSONLY", 33.90, -84.30, 10, kind="aprs", source="aprs", consent=True),
     ], {}, now=NOW)
-    names = {c["callsign"] for c in repo.gate_candidates(max_position_age_s=86400 * 30)}
+    names = {c["callsign"] for c in repo.gate_candidates(max_position_age_s=86400 * 36500)}
     assert names == {"YES1"}, names
     # After it is gated, the same position is not offered again until a newer one arrives
     repo.gate_upsert("YES1", object_name="YES1", beacon_id=7, last_sent_at=(NOW + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
                      last_lat=33.86, last_lon=-84.30, sent_count=1)
-    assert repo.gate_candidates(86400 * 30) == []
+    assert repo.gate_candidates(86400 * 36500) == []
     repo.ingest([_obs("YES1", 33.95, -84.30, -5, text="<GPS:33.95,-84.30> APRS:Y", consent=True)], {}, now=NOW + timedelta(minutes=5))
-    cands = repo.gate_candidates(86400 * 30)
+    cands = repo.gate_candidates(86400 * 36500)
     assert len(cands) == 1 and cands[0]["beacon_id"] == 7 and cands[0]["lat"] == 33.95
 
 

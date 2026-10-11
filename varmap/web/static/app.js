@@ -422,7 +422,7 @@
       </table>
       <div class="actions">
         <button id="d-centre" ${unl ? "disabled" : ""} title="Centre the map on this station">Centre</button>
-        <button id="d-track" ${unl ? "disabled" : ""} title="Draw this station's positions over the last 7 days as a line">${S.track === d.callsign ? "Hide track" : "Show track (7 d)"}</button>
+        <button id="d-track" ${unl ? "disabled" : ""} title="Draw the positions this station reported over the last 7 days (VarAC beacons, broadcasts and VMail GPS tags, plus APRS if Graywolf is connected) as a line">${S.track === d.callsign ? "Hide track" : "Show track (7 d)"}</button>
         <button id="d-copy" ${d.grid ? "" : "disabled"} title="Copy the grid square to the clipboard">Copy grid</button>
         <button id="d-fav" title="Mark as a favourite so you can filter on it">${d.is_favorite ? "★ Unfavourite" : "☆ Favourite"}</button>
         <button id="d-hide" title="Hide this station from the map and list (it keeps being recorded)">${d.is_hidden ? "Unhide" : "Hide"}</button>
@@ -615,10 +615,34 @@
       if (el.dataset.unit && el.type === "number") v = Math.round(fromDisplay(v, el.dataset.unit));
       setPath(patch, el.dataset.cfg, v);
     });
+    if (document.querySelector(".extra-prof") || (S.profiles && S.profiles.length)) {
+      setPath(patch, "varac.extra_profiles", [...document.querySelectorAll(".extra-prof:checked")].map((el) => el.value));
+    }
     return patch;
   }
+  // VarAC profiles: main profile picker + "also read" checkboxes.
+  async function loadProfiles() {
+    let r; try { r = await api("/api/varac/profiles"); } catch (e) { r = { profiles: [] }; }
+    S.profiles = r.profiles || [];
+    const sel = $("varac-profile"), cur = (S.config && S.config.varac.profile) || "";
+    sel.innerHTML = '<option value="">VarAC.ini (default)</option>' + S.profiles.filter((p) => p.name.toLowerCase() !== "varac.ini")
+      .map((p) => `<option value="${esc(p.name)}">${esc(p.name)}${p.callsign ? " - " + esc(p.callsign) : ""}</option>`).join("");
+    if (cur && ![...sel.options].some((o) => o.value === cur)) sel.insertAdjacentHTML("beforeend", `<option value="${esc(cur)}">${esc(cur)} (not found)</option>`);
+    renderExtraProfiles((S.config && S.config.varac.extra_profiles) || []);
+  }
+  function renderExtraProfiles(checked) {
+    const main = ($("varac-profile").value || "VarAC.ini").toLowerCase();
+    const mainDb = (S.profiles.find((p) => p.name.toLowerCase() === main) || {}).db_path;
+    const others = S.profiles.filter((p) => p.name.toLowerCase() !== main);
+    $("extra-profiles").innerHTML = others.length ? others.map((p) => {
+      const same = mainDb && p.db_path && p.db_path.toLowerCase() === mainDb.toLowerCase();
+      const note = same ? "same database as the main profile, already included" : (p.db_exists ? esc(p.db_path) : "database not found: " + esc(p.db_path || "?"));
+      return `<label title="${esc(p.db_path || "")}"><input type="checkbox" class="extra-prof" value="${esc(p.name)}" ${checked.includes(p.name) ? "checked" : ""}> ${esc(p.name)}${p.callsign ? " - " + esc(p.callsign) : ""} <span class="note">(${note})</span></label>`;
+    }).join("") : '<span class="note">No other VarAC profiles found in VarAC\'s folder.</span>';
+  }
+  $("varac-profile").addEventListener("change", () => renderExtraProfiles([...document.querySelectorAll(".extra-prof:checked")].map((el) => el.value)));
   async function openSettings(pane) {
-    S.config = await api("/api/config"); bindConfig(S.config);
+    S.config = await api("/api/config"); await loadProfiles(); bindConfig(S.config);
     modal.classList.remove("hidden"); if (pane) showPane(pane);
     refreshSettingsInfo(); refreshBeaconPane(); refreshTilesPane(); refreshAprsPane(); refreshWelfarePane();
   }
@@ -632,13 +656,22 @@
   $("btn-close-settings").onclick = () => modal.classList.add("hidden");
   modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.add("hidden"); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!modal.classList.contains("hidden")) modal.classList.add("hidden"); else if (S.selected) closeDetail(); } });
-  $("btn-save").onclick = async () => {
+  async function saveSettings(close) {
     const gwDry = document.querySelector('[data-cfg="graywolf.dry_run"]');
     const gwLive = gwDry && !gwDry.checked && (document.querySelector('[data-cfg="graywolf.mirror_enabled"]').checked || document.querySelector('[data-cfg="graywolf.gate_enabled"]').checked);
     if (gwLive && !confirm("APRS dry run is OFF and mirroring or object relaying is enabled: VarMap will ask Graywolf to transmit on APRS under your callsign. Continue?")) return;
-    try { const r = await api("/api/config", collectConfig()); S.config = r.config; $("save-result").textContent = "Saved."; S.pollMs = Math.max(2000, (S.config.varac.poll_interval_seconds || 10) * 1000); if (legend._render) legend._render(); refreshHealth(); refreshStations(true); }
-    catch (e) { $("save-result").textContent = "Save failed: " + e.message; }
-  };
+    const out = $("save-result"); out.className = ""; out.textContent = "Saving…";
+    try {
+      const r = await api("/api/config", collectConfig()); S.config = r.config; S.pollMs = Math.max(2000, (S.config.varac.poll_interval_seconds || 10) * 1000); if (legend._render) legend._render(); refreshHealth(); refreshStations(true);
+      await refreshHealth(); refreshSettingsInfo(); await loadProfiles(); bindConfig(S.config);
+      const reading = (S.health && S.health.varac && S.health.varac.profiles_read) || [];
+      out.className = "ok";
+      out.textContent = `Saved at ${new Date().toLocaleTimeString()}.` + (reading.length ? ` Reading VarAC profile${reading.length > 1 ? "s" : ""}: ${reading.join("; ")}` : "");
+      if (close) setTimeout(() => { modal.classList.add("hidden"); out.textContent = ""; out.className = ""; }, 600);
+    } catch (e) { out.className = "bad"; out.textContent = "Save failed: " + e.message; }
+  }
+  $("btn-save").onclick = () => saveSettings(false);
+  $("btn-save-close").onclick = () => saveSettings(true);
   $("btn-test-db").onclick = async () => {
     const path = document.querySelector('[data-cfg="varac.db_path"]').value;
     $("test-db-result").textContent = "testing…";
@@ -648,7 +681,8 @@
   function refreshSettingsInfo() {
     if (!S.health) return;
     const fmt = (o) => JSON.stringify(o, null, 1).replace(/[{}",]/g, "").replace(/\n\s*\n/g, "\n").trim();
-    $("varac-info").textContent = fmt(S.health.varac);
+    const srcs = ((S.health.poller || {}).sources || []).map((x) => `${x.profile}${x.also && x.also.length ? " + " + x.also.join(", ") : ""}: ${x.status}${x.error ? " (" + x.error + ")" : ""}, ${x.db_path || "?"}`);
+    $("varac-info").textContent = fmt(S.health.varac) + (srcs.length ? "\nDatabases read:\n  " + srcs.join("\n  ") : "");
     $("own-info").textContent = fmt(S.health.own);
     $("graywolf-info").textContent = fmt(S.health.graywolf || {});
     renderUpdateStatus(S.health.updates);

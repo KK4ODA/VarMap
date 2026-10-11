@@ -55,6 +55,10 @@ def parse_dotted_frequency(raw: Optional[str]) -> Optional[int]:
     return int(digits)
 
 
+def _norm(p: Optional[str]) -> str:
+    return os.path.normcase(os.path.abspath(p)) if p else ""
+
+
 def _on(v: Optional[str]) -> bool:
     return (v or "").strip().upper() in ("ON", "TRUE", "1", "YES")
 
@@ -103,7 +107,9 @@ class VaracConfig:
         explicit = (self.cfg.get("varac", "db_path") or "").strip()
         if explicit:
             return explicit  # always honoured, even if missing (so the UI can say so)
-        cp = self.ini()
+        return self._db_for_ini(self.ini())
+
+    def _db_for_ini(self, cp: Optional[configparser.ConfigParser]) -> str:
         if cp is not None:
             custom = (cp.get("OTHER", "DBCustomFilePath", fallback="") or "").strip()
             if custom:
@@ -114,6 +120,90 @@ class VaracConfig:
         if d:
             return os.path.join(d, VARAC_DB_NAME)
         return os.path.join(VARAC_DEFAULT_DIR, VARAC_DB_NAME)
+
+    # -- several profiles (VarAC cluster / one instance per radio) ------------
+    def profile_name(self) -> str:
+        return (self.cfg.get("varac", "profile") or "").strip() or VARAC_DEFAULT_INI
+
+    def _read_profile(self, name: str) -> Optional[configparser.ConfigParser]:
+        d = self.varac_dir()
+        p = os.path.join(d, name) if d and name else None
+        if not p or not os.path.isfile(p):
+            return None
+        try:
+            mtime = os.path.getmtime(p)
+        except OSError:
+            return None
+        cache = self.__dict__.setdefault("_prof_cache", {})
+        hit = cache.get(p)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        cp = read_varac_ini(p)
+        if cp is None:
+            return hit[1] if hit else None      # VarAC is saving it: keep the last good copy
+        cache[p] = (mtime, cp)
+        return cp
+
+    def list_profiles(self) -> List[Dict[str, Any]]:
+        """Every VarAC profile .ini in VarAC's folder.  A profile is any .ini with a
+        [MY_INFO] section; that skips VarAC_UI_languages.ini, VarAC_cat_commands.ini,
+        VarAC_templates.ini and similar helper files."""
+        d = self.varac_dir()
+        if not d or not os.path.isdir(d):
+            return []
+        primary = self.profile_name().lower()
+        main_db = _norm(self.db_path())
+        out: List[Dict[str, Any]] = []
+        try:
+            names = sorted((n for n in os.listdir(d) if n.lower().endswith(".ini")), key=str.lower)
+        except OSError:
+            return []
+        for name in names:
+            cp = self._read_profile(name)
+            if cp is None or not cp.has_section("MY_INFO"):
+                continue
+            db = self.db_path() if name.lower() == primary else self._db_for_ini(cp)
+            out.append({
+                "name": name,
+                "callsign": (cp.get("MY_INFO", "Mycall", fallback="") or "").strip().upper(),
+                "db_path": db,
+                "db_exists": bool(db and os.path.isfile(db)),
+                "same_db_as_main": _norm(db) == main_db,
+                "is_main": name.lower() == primary,
+                "cluster_enabled": _on(cp.get("VARAC_CLUSTER", "ClusterEnabled", fallback="")),
+            })
+        return out
+
+    def sources(self) -> List[Dict[str, Any]]:
+        """The VarAC databases to read: the main profile's first, then each extra profile
+        whose database is different (profiles sharing one database are read once)."""
+        main = {"profile": self.profile_name(), "db_path": self.db_path(), "mycall": self.mycall(),
+                "main": True, "also": []}
+        out = [main]
+        seen = {_norm(main["db_path"]): main}
+        extras = self.cfg.get("varac", "extra_profiles") or []
+        if isinstance(extras, str):
+            extras = [x.strip() for x in extras.split(",")]
+        for name in extras:
+            name = (name or "").strip()
+            if not name or name.lower() == main["profile"].lower():
+                continue
+            cp = self._read_profile(name)
+            if cp is None:
+                out.append({"profile": name, "db_path": None, "mycall": main["mycall"], "main": False,
+                            "also": [], "error": f"profile {name} not found in VarAC's folder"})
+                continue
+            db = self._db_for_ini(cp)
+            key = _norm(db)
+            if key in seen:
+                seen[key]["also"].append(name)       # same database: already being read
+                continue
+            mycall = (self.cfg.get("own_station", "callsign") or "").strip().upper() or \
+                (cp.get("MY_INFO", "Mycall", fallback="") or "").strip().upper()
+            src = {"profile": name, "db_path": db, "mycall": mycall, "main": False, "also": []}
+            seen[key] = src
+            out.append(src)
+        return out
 
     # -- .ini access -----------------------------------------------------
     def ini(self) -> Optional[configparser.ConfigParser]:
@@ -311,6 +401,8 @@ class VaracConfig:
             "varac_dir": self.varac_dir(),
             "ini_path": self.ini_path(),
             "ini_readable": self.ini() is not None,
+            "profiles_read": [s["profile"] + (" (+ " + ", ".join(s["also"]) + ", same database)" if s["also"] else "")
+                              for s in self.sources()],
             "db_path": self.db_path(),
             "mycall": self.mycall(),
             "my_locator": self.my_locator(),

@@ -196,6 +196,12 @@ i.dot.aprs { border-radius: 2px; transform: rotate(45deg); }
 .pane label input:not([type=checkbox]), .pane label select { width: 100%; color: var(--ink); }
 .pane label:has(> input[type=checkbox]) { flex-direction: row; align-items: center; gap: 6px; color: var(--ink); margin-top: 14px; }
 .pane label.inline { flex-direction: row; align-items: center; margin: 0; }
+.pane .fl { margin: 6px 0; font-size: 12px; color: var(--muted); }
+.checklist { display: flex; flex-direction: column; gap: 2px; padding: 4px 0 0 2px; }
+.pane .checklist label { margin: 0; flex-direction: row; align-items: center; gap: 6px; color: var(--ink); }
+.checklist .note { color: var(--muted); font-size: 11px; }
+#save-result.ok { color: var(--fresh); font-weight: 600; }
+#save-result.bad { color: var(--danger); font-weight: 600; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 16px; }
 .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }

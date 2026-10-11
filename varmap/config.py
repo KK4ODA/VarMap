@@ -22,7 +22,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "varac": {
         "db_path": "",                    # '' => discover from exe/profile, then C:\VarAC\VarAC.db
         "exe_path": "",
-        "profile": "",                    # '' => VarAC.ini
+        "profile": "",                    # '' => VarAC.ini.  Main profile: callsign, GPS, position TX
+        "extra_profiles": [],             # more profiles (VarAC cluster / several instances) to READ stations from
         "poll_interval_seconds": 10,
         "batch_size": 2000,
         "read_cq_frames": True,

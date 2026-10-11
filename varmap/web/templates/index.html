@@ -78,7 +78,7 @@
           <option value="normal" selected>Normal</option><option value="large">Large</option><option value="xlarge">Extra large</option>
         </select></label>
       <label title="When you point at a station, draw the grid square its position came from. A 6-character grid is about 4 x 8 km (2.5 x 5 mi)"><input type="checkbox" id="f-grid" checked> Grid squares on hover</label>
-      <label title="Draw a line through my own recorded positions from the last 24 hours"><input type="checkbox" id="m-owntrack"> Show my own track (24 h)</label>
+      <label title="Draw a line through MY OWN positions from the last 24 hours, as VarMap recorded them from VarAC's GPS (or Graywolf). Nothing to do with APRS; it works with VarAC alone"><input type="checkbox" id="m-owntrack"> Show my own track (24 h)</label>
     </div>
   </details>
   <span class="spacer"></span>
@@ -137,7 +137,11 @@
       <h3>VarAC installation</h3>
       <label title="Full path to VarAC.db. Leave blank and VarMap finds it next to VarAC.exe or via DBCustomFilePath in VarAC.ini">VarAC database (VarAC.db) <input data-cfg="varac.db_path" placeholder="blank = auto-discover (C:\VarAC\VarAC.db or DBCustomFilePath)"></label>
       <label title="Full path to VarAC.exe. Only used to find the folder with VarAC.ini and VarAC.db. Blank = C:\VarAC\VarAC.exe">VarAC.exe <input data-cfg="varac.exe_path" placeholder="blank = C:\VarAC\VarAC.exe"></label>
-      <label title="If you start VarAC with a profile (for example VarAC_9700.ini), enter that file name so VarMap reads the same settings">Profile .ini <input data-cfg="varac.profile" placeholder="blank = VarAC.ini"></label>
+      <label title="The VarAC profile (.ini) of the instance VarMap works with: its callsign, GPS position and Position TX come from here. If you start VarAC with a profile (for example VarAC_9700.ini), pick that one">Main VarAC profile <select id="varac-profile" data-cfg="varac.profile"><option value="">VarAC.ini (default)</option></select></label>
+      <div class="fl" title="Running several VarAC instances (a VarAC cluster, or one instance per radio)? Tick the other profiles and VarMap maps the stations every instance hears. Profiles that share one database are read once">
+        <div>Also show stations heard by these profiles</div>
+        <div id="extra-profiles" class="checklist muted">Looking for profiles…</div>
+      </div>
       <div class="row">
         <button id="btn-test-db" title="Open the database above read-only and check it really is a VarAC database">Test database</button> <span id="test-db-result" class="muted"></span>
       </div>
@@ -379,7 +383,8 @@
     <div class="modal-foot">
       <span id="save-result" class="muted"></span>
       <span class="spacer"></span>
-      <button id="btn-save" class="primary" title="Save all settings on every tab. Most take effect immediately; the web port needs a restart">Save settings</button>
+      <button id="btn-save" title="Save all settings on every tab and keep this window open. Most take effect immediately; the web port needs a restart">Save</button>
+      <button id="btn-save-close" class="primary" title="Save all settings on every tab and close this window">Save and close</button>
     </div>
   </div>
 </div>

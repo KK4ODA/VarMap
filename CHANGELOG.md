@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 (2026-10-10)
+
+- Several VarAC profiles (issue #1): Settings, VarAC now lists every profile .ini in VarAC's folder. Choose the main profile from a list and tick other profiles to map the stations they hear too; profiles sharing one database are read once. Settings shows which databases are read and their status.
+- Saving settings now says clearly that it saved, at what time, and which VarAC profiles are being read; new "Save and close" button.
+- Track tooltips explain that tracks come from VarAC (and APRS only when Graywolf is connected) (issue #2).
+
 ## 0.4.0 (2026-09-06)
 
 - Welfare check-ins from Emcomm BBS on the map. VarMap reads the `welfare_*.csv` that

@@ -118,7 +118,8 @@ def test_end_to_end_poll_and_replay():
 def test_backfill_policies():
     tmp = tempfile.mkdtemp()
     db = os.path.join(tmp, "VarAC.db")
-    rows = [(ts(60 * 24 * 40), 2, "OLD1", 1, "EM73UU", 0, ""), (ts(60), 2, "NEW1", 1, "EM73UU", 0, "")]
+    now = datetime.now(timezone.utc)                  # "days:30" is measured from the real clock
+    rows = [(ts(60 * 24 * 40, now), 2, "OLD1", 1, "EM73UU", 0, ""), (ts(60, now), 2, "NEW1", 1, "EM73UU", 0, "")]
     make_varac_db(db, rows)
     from varmap.services.poller import Poller
     rt = FakeRuntime(tmp, db)

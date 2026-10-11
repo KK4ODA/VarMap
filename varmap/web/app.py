@@ -99,6 +99,15 @@ def create_app(rt) -> Flask:
         rt.apply_config(patch)
         return jsonify({"ok": True, "config": rt.cfg.snapshot()})
 
+    @app.route("/api/varac/profiles")
+    def api_varac_profiles():
+        try:
+            profiles = rt.vc.list_profiles()
+        except Exception as e:  # noqa: BLE001
+            return jsonify({"ok": False, "error": str(e), "profiles": []})
+        return jsonify({"ok": True, "profiles": profiles, "main": rt.vc.profile_name(),
+                        "extra": rt.cfg.get("varac", "extra_profiles") or []})
+
     @app.route("/api/test_db", methods=["POST"])
     def api_test_db():
         body = request.get_json(force=True, silent=True) or {}

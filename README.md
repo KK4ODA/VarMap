@@ -137,6 +137,14 @@ preferred band and re-checks the band right before the final click, because VarA
 broadcast until the channel is clear and a late start would go out on the next band. The
 frequency VarAC really transmitted on is read back from `VarAC.log` and shown in the TX log.
 
+**Several VarAC instances.** Running a VarAC cluster, or one VarAC per radio with its own
+profile? Settings, VarAC lists every profile .ini in VarAC's folder. Pick the main profile
+(callsign, GPS, Position TX) and tick the others; VarMap maps the stations every instance
+hears. Profiles that share one database are read once.
+
+**Tracks.** "Show my own track" in the Map menu draws your own positions from VarAC's GPS;
+"Show track" in a station's panel draws the positions that station reported. Neither needs APRS.
+
 **Imperial or metric.** Settings, Display, Units: imperial (miles, feet, mph) or metric
 (km, m, km/h), or follow VarAC's own distance unit. It applies to list and panel distances,
 accuracy, speeds and the movement thresholds; values are stored in metric.

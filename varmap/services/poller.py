@@ -39,6 +39,7 @@ class Poller(threading.Thread):
             "identity": None, "last_poll": None, "last_ok": None, "last_error": None,
             "error_count": 0, "backoff_seconds": 0, "frames_total": 0, "last_batch": None,
             "backfill": None, "varac_running": None, "poll_ms": None, "probe": None,
+            "sources": [],
         }
 
     # -- control -------------------------------------------------------------
@@ -91,25 +92,91 @@ class Poller(threading.Thread):
 
     # -- one poll --------------------------------------------------------------
     def poll_once(self) -> None:
+        """Read the main profile's database, then any extra profiles' databases (VarAC
+        cluster or one instance per radio).  The main database drives the status; an
+        extra one that fails only reports its own error."""
+        try:
+            sources = self.vc.sources()
+        except Exception as e:  # noqa: BLE001
+            log.debug("profile discovery failed: %s", e)
+            sources = [{"profile": "VarAC.ini", "db_path": self.vc.db_path(), "mycall": self.vc.mycall(),
+                        "main": True, "also": []}]
+        report = []
+        total = 0
+        for src in sources:
+            entry = {"profile": src["profile"], "also": src.get("also", []), "db_path": src.get("db_path"),
+                     "main": src.get("main", False), "status": "ok", "error": src.get("error"), "last_batch": 0}
+            if src.get("main"):
+                n = self._poll_main(src)
+                snap = self.snapshot()
+                entry.update(status=snap["status"], error=snap["last_error"], last_batch=snap.get("last_batch") or 0)
+            elif src.get("error"):
+                entry["status"] = "error"
+                n = 0
+            else:
+                n, err = self._poll_extra(src)
+                if err:
+                    entry.update(status="error", error=err)
+                entry["last_batch"] = n
+            total += n or 0
+            report.append(entry)
+        self._set(sources=report)
+        main_n = report[0]["last_batch"] if report else 0
+        if total - main_n > 0:
+            self.rt.on_new_data(total - main_n)     # the main pass already announced its own rows
+
+    def _poll_extra(self, src: Dict[str, Any]):
+        path = src.get("db_path")
+        if not path or not os.path.isfile(path):
+            return 0, f"VarAC database not found: {path or '(no path)'}"
+        dbs = VaracDbSource(path, src.get("mycall") or "")
+        try:
+            conn = dbs.open()
+        except sqlite3.OperationalError as e:
+            return 0, f"cannot open database: {e}"
+        try:
+            try:
+                dbs.probe(conn)
+            except (NotAVaracDatabase, IncompatibleSchema) as e:
+                return 0, str(e)
+            main_id = self.state.get("identity")
+            # Two databases with the same identity (e.g. a copied VarAC.db) must not share cursors.
+            tag = dbs.identity if dbs.identity != main_id else f"{dbs.identity}#{abs(hash(os.path.normcase(path))) % 10**8}"
+            max_ids = dbs.max_ids(conn)
+            n = self._drain(conn, dbs, "cqframe", max_ids["cqframe"], "cqframe_time",
+                            dbs.fetch_cqframes, dbs.cqframe_to_observation, tag=tag)
+            if self.cfg.get("varac", "scan_broadcasts") and dbs.has_broadcast:
+                n += self._drain(conn, dbs, "broadcast", max_ids.get("broadcast", 0), "broadcast_time",
+                                 dbs.fetch_broadcasts, dbs.broadcast_to_observation, tag=tag)
+            if self.cfg.get("varac", "scan_vmail_gps_tags") and dbs.has_vmail:
+                n += self._drain(conn, dbs, "vmail", max_ids.get("vmail", 0), "creation_time",
+                                 dbs.fetch_vmails, dbs.vmail_to_observation, tag=tag)
+            return n, None
+        except sqlite3.OperationalError as e:
+            return 0, f"database busy: {e}"
+        finally:
+            conn.close()
+
+    def _poll_main(self, s: Dict[str, Any]) -> int:
         t0 = time.time()
         self._check_varac_running()
-        path = self.vc.db_path()
+        path = s.get("db_path")
         self._set(db_path=path)
         if not path or not os.path.isfile(path):
             self._fail(f"VarAC database not found: {path or '(no path)'}")
-            return
-        src = VaracDbSource(path, self.vc.mycall())
+            return 0
+        src = VaracDbSource(path, s.get("mycall") or self.vc.mycall())
         try:
             conn = src.open()
         except sqlite3.OperationalError as e:
             self._fail(f"cannot open database: {e}", transient="locked" in str(e).lower())
-            return
+            return 0
         try:
             try:
                 probe = src.probe(conn)
             except (NotAVaracDatabase, IncompatibleSchema) as e:
                 self._fail(str(e))
-                return
+                return 0
             self._note_identity(src, probe)
             max_ids = src.max_ids(conn)
             total = 0
@@ -138,8 +205,10 @@ class Poller(threading.Thread):
                                    "poll_ms": int((time.time() - t0) * 1000), "max_ids": max_ids})
             if total:
                 self.rt.on_new_data(total)
+            return total
         except sqlite3.OperationalError as e:
             self._fail(f"database busy: {e}", transient="locked" in str(e).lower() or "busy" in str(e).lower())
+            return 0
         finally:
             conn.close()
 
@@ -172,8 +241,8 @@ class Poller(threading.Thread):
         return 0
 
     def _drain(self, conn, src: VaracDbSource, table: str, max_id: int, time_col: str,
-               fetch: Callable, mapper: Callable) -> int:
-        sid = f"{table}@{src.identity}"
+               fetch: Callable, mapper: Callable, tag: Optional[str] = None) -> int:
+        sid = f"{table}@{tag or src.identity}"
         rec = self.repo.cursor_get(sid)
         if rec is None:
             hwm = self._initial_cursor(conn, src, table, max_id, time_col)
