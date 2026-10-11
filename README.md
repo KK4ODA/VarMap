@@ -254,6 +254,18 @@ the macOS (Intel and Apple Silicon) and Linux packages, and publishes them with
 auto-generated notes on the Releases page. Every push to `main` runs the test suite
 on Windows and Linux (`ci.yml`).
 
+<!-- tota-support:start -->
+## Support
+
+VarMap is free and stays free. It is written by KK4ODA, who also runs
+[Tiles on the Air](https://tilesontheair.com), a free program for portable
+operators, and both are kept going by the people who use them. If VarMap is
+useful to you, a contribution through the
+[Tiles on the Air giving page](https://tilesontheair.com/Giving) helps keep this tool and Tiles
+running. Nothing is ever locked behind it, and a bug report or an on-air
+report helps just as much.
+<!-- tota-support:end -->
+
 ## Credits and license
 
 VarMap is MIT licensed (see `LICENSE`). It builds on lessons from
